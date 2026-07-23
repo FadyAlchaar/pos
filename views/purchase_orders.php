@@ -83,7 +83,9 @@ $products = getAllProducts('', 100, 0);
                         <!-- Product Search with "Add New" button -->
                         <div style="flex:1; position: relative;">
                             <input type="text" class="form-control po-product-search" placeholder="<?= __('search_or_add_product') ?>" 
-                                   onkeyup="searchPOPRODUCT(this)" autocomplete="off">
+                                   onkeyup="searchPOPRODUCT(this)"
+                                   onkeydown="handleProductSearchEnter(event, this)" 
+                                   autocomplete="off">
                             <input type="hidden" class="po-product-id" value="">
                             <div class="po-product-results" style="position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 4px; max-height: 200px; overflow-y: auto; display: none; z-index: 1000;"></div>
                         </div>
@@ -229,6 +231,27 @@ function searchPOPRODUCT(input) {
                 resultsDiv.style.display = 'block';
             }
         });
+}
+
+function handleProductSearchEnter(event, input) {
+    if (event.key === 'Enter') {
+        event.preventDefault(); // Prevent form submission
+        
+        const container = input.closest('.po-product-row');
+        const resultsDiv = container.querySelector('.po-product-results');
+        
+        if (resultsDiv && resultsDiv.style.display !== 'none') {
+            const items = resultsDiv.querySelectorAll('.product-result-item');
+            if (items.length === 1) {
+                // Exactly one match → auto-select it
+                items[0].click();
+                // Move focus to quantity field
+                const qtyInput = container.querySelector('.po-qty');
+                if (qtyInput) qtyInput.focus();
+            }
+            // If multiple matches, do nothing (user must click manually)
+        }
+    }
 }
 
 function selectPOProduct(element) {
@@ -501,7 +524,9 @@ function openPurchaseOrderModal() {
         <div class="po-product-row d-flex gap-2 mb-2 align-items-center">
             <div style="flex:1; position: relative;">
                 <input type="text" class="form-control po-product-search" placeholder="<?= __('search_or_add_product') ?>" 
-                       onkeyup="searchPOPRODUCT(this)" autocomplete="off">
+                       onkeyup="searchPOPRODUCT(this)"
+                       onkeydown="handleProductSearchEnter(event, this)"
+                       autocomplete="off">
                 <input type="hidden" class="po-product-id" value="">
                 <div class="po-product-results" style="position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #ddd; border-radius: 4px; max-height: 200px; overflow-y: auto; display: none; z-index: 1000;"></div>
             </div>
