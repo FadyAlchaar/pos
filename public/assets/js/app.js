@@ -55,3 +55,23 @@ document.addEventListener('click', function(event) {
         }
     }
 });
+
+function toggleClearButton(input) {
+    const wrapper = input.closest('.input-clear-wrapper');
+    const btn = wrapper.querySelector('.clear-btn');
+    if (input.value.length > 0) {
+        btn.classList.add('show');
+    } else {
+        btn.classList.remove('show');
+    }
+}
+
+function clearInput(btn) {
+    const input = btn.closest('.input-clear-wrapper').querySelector('input');
+    input.value = '';
+    input.focus();
+    btn.classList.remove('show');
+    // Trigger any onchange/keyup events if needed
+    if (input.onkeyup) input.onkeyup();
+    if (input.onchange) input.onchange();
+}

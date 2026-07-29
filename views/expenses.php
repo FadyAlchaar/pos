@@ -66,7 +66,13 @@ $canView = hasPermission('view_expenses');
         <div class="d-flex flex-wrap gap-2 mb-3">
             <div style="position: relative; flex: 1; min-width: 200px;">
                 <i class="fas fa-search" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--gray);"></i>
-                <input type="text" id="searchExpense" class="form-control" placeholder="<?= __('Search expenses...') ?>" style="padding-left: 40px;" onkeyup="loadExpenses()">
+                <div class="input-clear-wrapper">
+                    <input type="text" id="searchExpense" class="form-control" placeholder="<?= __('Search expenses...') ?>" 
+                        style="padding-left: 40px;" 
+                        oninput="toggleClearButton(this)"
+                        onkeyup="loadExpenses()">
+                    <button type="button" class="clear-btn" onclick="clearInput(this)">✕</button>
+                </div>
             </div>
             <input type="date" id="startDate" class="form-control" style="width: 150px;" onchange="loadExpenses()">
             <input type="date" id="endDate" class="form-control" style="width: 150px;" onchange="loadExpenses()">

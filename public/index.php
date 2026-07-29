@@ -176,7 +176,31 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
         case 'create_sale':
             requirePermission('manage_sales');
-            // 1. Ensure user is logged in
+            
+            // 1. Read raw input
+            $raw_input = file_get_contents('php://input');
+            error_log("create_sale raw input: " . $raw_input); // temporary debug
+            
+            // 2. Check if empty
+            if (empty($raw_input)) {
+                $response = ['success' => false, 'message' => 'Empty request body'];
+                break;
+            }
+            
+            // 3. Decode JSON
+            $data = json_decode($raw_input, true);
+            if ($data === null) {
+                $response = ['success' => false, 'message' => 'Invalid JSON: ' . json_last_error_msg()];
+                break;
+            }
+            
+            // 4. Validate required fields
+            if (empty($data['items']) || !isset($data['total'])) {
+                $response = ['success' => false, 'message' => 'Missing items or total'];
+                break;
+            }
+            
+            // 5. Ensure user is logged in
             if (!isset($_SESSION['user_id'])) {
                 $response = ['success' => false, 'message' => 'User not logged in.'];
                 break;
@@ -184,56 +208,39 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             
             $user_id = (int)$_SESSION['user_id'];
             
-            // 2. Verify that the user exists in the database
+            // 6. Verify user exists (optional, but keep)
             $db = Database::getInstance()->getConnection();
             $stmt = $db->prepare("SELECT id FROM users WHERE id = ?");
             $stmt->execute([$user_id]);
             $user = $stmt->fetch();
-            
             if (!$user) {
-                // Fallback: try to get the first admin user (for testing)
+                // fallback: first admin
                 $stmt = $db->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1");
                 $admin = $stmt->fetch();
                 if ($admin) {
                     $user_id = (int)$admin['id'];
-                    // Update session to the correct ID
                     $_SESSION['user_id'] = $user_id;
                 } else {
-                    // No user exists at all – create a default admin user
-                    $password = password_hash('admin123', PASSWORD_BCRYPT);
-                    $stmt = $db->prepare("INSERT INTO users (name, email, password, role, is_active) VALUES (?, ?, ?, ?, ?)");
-                    $stmt->execute(['Administrator', 'admin@admin.com', $password, 'admin', 1]);
-                    $user_id = (int)$db->lastInsertId();
-                    $_SESSION['user_id'] = $user_id;
-                    $_SESSION['user_name'] = 'Administrator';
-                    $_SESSION['user_role'] = 'admin';
-                    $_SESSION['user_email'] = 'admin@admin.com';
+                    $response = ['success' => false, 'message' => 'No valid user found'];
+                    break;
                 }
             }
             
-            // 3. Parse the JSON payload
-            $raw_input = file_get_contents('php://input');
-            $data = json_decode($raw_input, true);
-            if (!$data || empty($data['items']) || empty($data['total'])) {
-                $response = ['success' => false, 'message' => 'Invalid sale data: ' . json_last_error_msg()];
-                break;
-            }
-    
-            // 4. Build sale data
+            // 7. Build sale data
             $saleData = [
                 'user_id' => $user_id,
-                'customer_id' => $data['customer_id'] ?? null,  // <-- ADD THIS
+                'customer_id' => $data['customer_id'] ?? null,
                 'customer_name' => $data['customer_name'] ?? null,
                 'customer_phone' => $data['customer_phone'] ?? null,
-                'subtotal' => $data['subtotal'] ?? 0,
-                'discount' => $data['discount'] ?? 0,
-                'tax' => $data['tax'] ?? 0,
-                'total' => $data['total'] ?? 0,
+                'subtotal' => (float)$data['subtotal'],
+                'discount' => (float)($data['discount'] ?? 0),
+                'tax' => (float)($data['tax'] ?? 0),
+                'total' => (float)$data['total'],
                 'payment_method' => $data['payment_method'] ?? 'cash',
-                'items' => $data['items'] ?? []
+                'items' => $data['items']
             ];
             
-            // 5. Create the sale
+            // 8. Create sale
             $result = createSale($saleData);
             $response = $result;
             break;
@@ -397,7 +404,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             unset($data['action']);
             
             // Debug: log what's being saved (check PHP error log)
-            error_log("Settings saved: " . print_r($data, true));
+            //error_log("Settings saved: " . print_r($data, true));
             
             // Make sure currency_symbol and default_language are included
             if (!isset($data['currency_symbol']) || empty($data['currency_symbol'])) {
@@ -815,14 +822,14 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             $response = ['success' => true, 'data' => $sale];
             break;
 
-    case 'create_return':
-        requirePermission('manage_returns');
-        $raw_input = file_get_contents('php://input');
-        $data = json_decode($raw_input, true);
-        if (!$data || empty($data['items'])) {
-            $response = ['success' => false, 'message' => 'Invalid return data'];
-            break;
-        }
+        case 'create_return':
+            requirePermission('manage_returns');
+            $raw_input = file_get_contents('php://input');
+            $data = json_decode($raw_input, true);
+            if (!$data || empty($data['items'])) {
+                $response = ['success' => false, 'message' => 'Invalid return data'];
+                break;
+            }
         
         // Ensure total_refund is a number, default 0
         $totalRefund = isset($data['total_refund']) ? floatval($data['total_refund']) : 0;
@@ -1049,7 +1056,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             $data = json_decode($raw, true);
             
             // Log for debugging (check error log)
-            error_log("Transfer data received: " . print_r($data, true));
+            //error_log("Transfer data received: " . print_r($data, true));
             
             if (!$data || empty($data['from_device_id']) || empty($data['to_device_id']) || empty($data['items'])) {
                 $response = ['success' => false, 'message' => 'Invalid transfer data: ' . json_last_error_msg()];
@@ -1290,7 +1297,207 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             $printers = getInstalledPrinters();
             $response = ['success' => true, 'data' => $printers];
             break;
+        
+        case 'get_cash_report':
+            requirePermission('view_reports');
+            $period = $_GET['period'] ?? 'today';
+            $start = $_GET['start'] ?? '';
+            $end = $_GET['end'] ?? '';
+            $deviceId = getCurrentDeviceId();
+            
+            $db = Database::getInstance()->getConnection();
+            $params = [];
+            $conditions = [];
+            
+            if ($deviceId) {
+                $conditions[] = "c.device_id = ?";
+                $params[] = $deviceId;
+            }
+            
+            // Date filter
+            if ($period === 'today') {
+                $conditions[] = "DATE(c.created_at) = CURDATE()";
+            } elseif ($period === 'yesterday') {
+                $conditions[] = "DATE(c.created_at) = DATE_SUB(CURDATE(), INTERVAL 1 DAY)";
+            } elseif ($period === 'week') {
+                $conditions[] = "YEARWEEK(c.created_at) = YEARWEEK(CURDATE())";
+            } elseif ($period === 'month') {
+                $conditions[] = "MONTH(c.created_at) = MONTH(CURDATE()) AND YEAR(c.created_at) = YEAR(CURDATE())";
+            } elseif ($period === 'custom' && $start && $end) {
+                $conditions[] = "DATE(c.created_at) BETWEEN ? AND ?";
+                $params[] = $start;
+                $params[] = $end;
+            }
+            
+            // Build WHERE clause
+            $whereClause = !empty($conditions) ? " WHERE " . implode(" AND ", $conditions) : "";
+            
+            // Get transactions
+            $sql = "SELECT c.*, u.name as user_name 
+                    FROM cash_transactions c
+                    LEFT JOIN users u ON c.user_id = u.id" . $whereClause . " ORDER BY c.id DESC";
+            $stmt = $db->prepare($sql);
+            $stmt->execute($params);
+            $transactions = $stmt->fetchAll();
+            
+            // Get summary
+            $summarySql = "SELECT 
+                COALESCE(SUM(CASE WHEN type = 'sale' THEN amount ELSE 0 END), 0) as total_sales,
+                COALESCE(SUM(CASE WHEN type = 'return' THEN amount ELSE 0 END), 0) as total_returns,
+                COALESCE(SUM(CASE WHEN type = 'starting_cash' THEN amount ELSE 0 END), 0) as starting_cash,
+                COALESCE(SUM(amount), 0) as net_cash
+                FROM cash_transactions c" . $whereClause;
+            $stmt = $db->prepare($summarySql);
+            $stmt->execute($params);
+            $summary = $stmt->fetch();
+            
+            $response = [
+                'success' => true,
+                'data' => $transactions,
+                'summary' => [
+                    'total_sales' => number_format($summary['total_sales'] ?? 0, 2),
+                    'total_returns' => number_format($summary['total_returns'] ?? 0, 2),
+                    'starting_cash' => number_format($summary['starting_cash'] ?? 0, 2),
+                    'net_cash' => number_format($summary['net_cash'] ?? 0, 2)
+                ]
+            ];
+            break;
+        
+        case 'start_shift':
+            requirePermission('manage_sales');
+            $raw = file_get_contents('php://input');
+            $data = json_decode($raw, true);
+            $amount = isset($data['amount']) ? floatval($data['amount']) : 0;
+            $deviceId = getCurrentDeviceId();
+            $userId = $_SESSION['user_id'];
+            
+            if ($amount < 0) {
+                $response = ['success' => false, 'message' => 'Invalid amount'];
+                break;
+            }
+            
+            $db = Database::getInstance()->getConnection();
+            $stmt = $db->prepare("INSERT INTO cash_transactions (user_id, device_id, amount, type, notes) VALUES (?, ?, ?, 'starting_cash', ?)");
+            $result = $stmt->execute([$userId, $deviceId, $amount, 'Shift started with ' . $amount]);
+            
+            if ($result) {
+                $response = ['success' => true, 'message' => 'Shift started successfully!'];
+            } else {
+                $response = ['success' => false, 'message' => 'Failed to start shift.'];
+            }
+            break;
+        
+        case 'get_cash_balance':
+            requirePermission('view_reports');
+            $deviceId = getCurrentDeviceId();
+            $db = Database::getInstance()->getConnection();
+            
+            // Sum only TODAY's transactions
+            $stmt = $db->prepare("SELECT COALESCE(SUM(amount), 0) as balance 
+                                FROM cash_transactions 
+                                WHERE device_id = ? AND DATE(created_at) = CURDATE()");
+            $stmt->execute([$deviceId]);
+            $result = $stmt->fetch();
+            
+            $response = ['success' => true, 'balance' => number_format($result['balance'] ?? 0, 2)];
+            break;
+            
+        case 'start_shift':
+            requirePermission('manage_sales');
+            $raw = file_get_contents('php://input');
+            $data = json_decode($raw, true);
+            $amount = isset($data['amount']) ? floatval($data['amount']) : 0;
+            $deviceId = getCurrentDeviceId();
+            $userId = $_SESSION['user_id'];
+            
+            if ($amount <= 0) {
+                $response = ['success' => false, 'message' => 'Please enter a valid amount.'];
+                break;
+            }
+            
+            $db = Database::getInstance()->getConnection();
+            
+            // Check if a shift is already started (starting_cash already exists today)
+            $stmt = $db->prepare("SELECT COUNT(*) as count FROM cash_transactions WHERE device_id = ? AND type = 'starting_cash' AND DATE(created_at) = CURDATE()");
+            $stmt->execute([$deviceId]);
+            $result = $stmt->fetch();
+            if ($result['count'] > 0) {
+                $response = ['success' => false, 'message' => 'A shift has already been started today for this device.'];
+                break;
+            }
+            
+            $stmt = $db->prepare("INSERT INTO cash_transactions (user_id, device_id, amount, type, notes) VALUES (?, ?, ?, 'starting_cash', ?)");
+            $result = $stmt->execute([$userId, $deviceId, $amount, 'Shift started with ' . $amount]);
+            
+            if ($result) {
+                $response = ['success' => true, 'message' => 'Shift started successfully!'];
+            } else {
+                $response = ['success' => false, 'message' => 'Failed to start shift.'];
+            }
+            break;
 
+        case 'close_shift':
+            requirePermission('manage_sales');
+            $deviceId = getCurrentDeviceId();
+            $db = Database::getInstance()->getConnection();
+            
+            // Check if a shift is started today
+            $stmt = $db->prepare("SELECT COUNT(*) as count FROM cash_transactions WHERE device_id = ? AND type = 'starting_cash' AND DATE(created_at) = CURDATE()");
+            $stmt->execute([$deviceId]);
+            $result = $stmt->fetch();
+            if ($result['count'] == 0) {
+                $response = ['success' => false, 'message' => 'No shift has been started today.'];
+                break;
+            }
+            
+            // Check if the shift is already closed (look for closing transaction today)
+            $stmt = $db->prepare("SELECT COUNT(*) as count FROM cash_transactions 
+                                WHERE device_id = ? AND type = 'adjustment' 
+                                AND DATE(created_at) = CURDATE() AND notes LIKE '%Shift closed%'");
+            $stmt->execute([$deviceId]);
+            $result = $stmt->fetch();
+            if ($result['count'] > 0) {
+                $response = ['success' => false, 'message' => 'This shift has already been closed today.'];
+                break;
+            }
+            
+            // Get current balance
+            $stmt = $db->prepare("SELECT COALESCE(SUM(amount), 0) as balance FROM cash_transactions WHERE device_id = ?");
+            $stmt->execute([$deviceId]);
+            $balance = $stmt->fetch()['balance'] ?? 0;
+            
+            // Add closing transaction
+            $stmt = $db->prepare("INSERT INTO cash_transactions (user_id, device_id, amount, type, notes) VALUES (?, ?, 0, 'adjustment', ?)");
+            $stmt->execute([$_SESSION['user_id'], $deviceId, 'Shift closed. Final balance: ' . number_format($balance, 2)]);
+            
+            $response = ['success' => true, 'message' => 'Shift closed. Final balance: ' . number_format($balance, 2)];
+            break;
+        
+        case 'preview_receipt':
+            requirePermission('manage_settings');
+            // Build preview HTML from form data
+            $data = $_POST;
+            $html = buildReceiptPreview($data);
+            $response = ['success' => true, 'html' => $html];
+            break;
+
+        case 'save_receipt_template':
+            requirePermission('manage_settings');
+            $name = $_POST['template_name'] ?? 'Untitled';
+            $settings = buildReceiptSettings($_POST);
+            $db = Database::getInstance()->getConnection();
+            
+            if (!empty($_POST['template_id'])) {
+                $stmt = $db->prepare("UPDATE receipt_templates SET name = ?, settings = ? WHERE id = ?");
+                $result = $stmt->execute([$name, json_encode($settings), $_POST['template_id']]);
+                $id = $_POST['template_id'];
+            } else {
+                $stmt = $db->prepare("INSERT INTO receipt_templates (name, settings) VALUES (?, ?)");
+                $result = $stmt->execute([$name, json_encode($settings)]);
+                $id = $db->lastInsertId();
+            }
+            $response = ['success' => $result, 'message' => $result ? 'Template saved!' : 'Save failed.', 'id' => $id];
+            break;
 
         default:
             $response = ['success' => false, 'message' => 'Unknown API action'];
@@ -1539,6 +1746,22 @@ switch ($route) {
         $page_title = __('backup');
         $active = 'backup';
         require __DIR__ . '/../views/backup.php';
+        break;
+    
+    case 'cash_report':
+        requirePermission('view_reports');
+        $title = __('cash_report');
+        $page_title = __('cash_report');
+        $active = 'cash_report';
+        require __DIR__ . '/../views/cash_report.php';
+        break;
+    
+    case 'receipt_designer':
+        requirePermission('manage_settings');
+        $title = __('receipt_designer');
+        $page_title = __('receipt_designer');
+        $active = 'receipt_designer';
+        require __DIR__ . '/../views/receipt_designer.php';
         break;
 
     default:

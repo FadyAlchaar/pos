@@ -286,10 +286,10 @@ function createSale($data) {
     $db = Database::getInstance()->getConnection();
     $db->beginTransaction();
     $deviceId = getCurrentDeviceId();
-
+    
     try {
         $invoiceNo = 'INV-' . date('Ymd') . '-' . rand(1000, 9999);
-
+        
         $stmt = $db->prepare("INSERT INTO sales (
             device_id, invoice_no, user_id, customer_id, customer_name, customer_phone, 
             subtotal, discount, tax, total, payment_method
@@ -307,9 +307,10 @@ function createSale($data) {
             $data['total'],
             $data['payment_method'] ?? 'cash'
         ]);
-
+        
         $saleId = $db->lastInsertId();
-
+        
+        // Insert sale items
         foreach ($data['items'] as $item) {
             $itemDiscount = $item['discount'] ?? 0;
             $itemTotal = ($item['price'] * $item['quantity']) - $itemDiscount;
@@ -317,7 +318,22 @@ function createSale($data) {
             $stmt->execute([$saleId, $item['product_id'], $item['quantity'], $item['price'], $itemDiscount, $itemTotal]);
             updateStock($item['product_id'], $item['quantity']);
         }
-
+        
+        // ==========================================
+        // 🔥 ADD CASH TRANSACTION (CASH IN)
+        // ==========================================
+        $stmt = $db->prepare("INSERT INTO cash_transactions 
+            (user_id, device_id, amount, type, reference_id, notes) 
+            VALUES (?, ?, ?, 'sale', ?, ?)");
+        $stmt->execute([
+            $data['user_id'],
+            $deviceId,
+            $data['total'], // positive amount = cash IN
+            $saleId,
+            'Sale ' . $invoiceNo
+        ]);
+        // ==========================================
+        
         $db->commit();
         return ['success' => true, 'sale_id' => $saleId, 'invoice_no' => $invoiceNo];
     } catch (Exception $e) {
@@ -589,201 +605,79 @@ function getPrinterSettings() {
 }
 
 // ============================================
+// GET RECEIPT TEMPLATE
+// ============================================
+function getReceiptTemplate($templateId = null) {
+    $db = Database::getInstance()->getConnection();
+    
+    if ($templateId) {
+        $stmt = $db->prepare("SELECT * FROM receipt_templates WHERE id = ?");
+        $stmt->execute([$templateId]);
+        $template = $stmt->fetch();
+        if ($template) {
+            return $template;
+        }
+    }
+    
+    // Get default template
+    $stmt = $db->query("SELECT * FROM receipt_templates WHERE is_default = 1 LIMIT 1");
+    $template = $stmt->fetch();
+    if ($template) {
+        return $template;
+    }
+    
+    // Fallback: get first template
+    $stmt = $db->query("SELECT * FROM receipt_templates LIMIT 1");
+    $template = $stmt->fetch();
+    if ($template) {
+        return $template;
+    }
+    
+    // No template exists — create default
+    $defaultSettings = [
+        'direction' => 'ltr',
+        'paper_width' => 40,
+        'font_size' => 12,
+        'font_weight' => 'normal',
+        'footer_text' => 'Thank you for your business!',
+        'store_name' => ['enabled' => true],
+        'store_address' => ['enabled' => true],
+        'store_phone' => ['enabled' => true],
+        'invoice_no' => ['enabled' => true],
+        'date' => ['enabled' => true],
+        'cashier' => ['enabled' => true],
+        'customer' => ['enabled' => true],
+        'items_table' => ['enabled' => true, 'border_style' => 'box'],
+        'subtotal' => ['enabled' => true],
+        'discount' => ['enabled' => true],
+        'tax' => ['enabled' => true],
+        'total' => ['enabled' => true],
+        'footer' => ['enabled' => true]
+    ];
+    $stmt = $db->prepare("INSERT INTO receipt_templates (name, is_default, settings) VALUES (?, 1, ?)");
+    $stmt->execute(['Default Template', json_encode($defaultSettings)]);
+    $id = $db->lastInsertId();
+    
+    return ['id' => $id, 'settings' => $defaultSettings];
+}
+
+// ============================================
 // PRINTING FUNCTIONS
 // ============================================
 function printReceipt($saleId, $method = 'normal') {
-    $sale = getSaleById($saleId);
-    if (!$sale) {
-        return ['success' => false, 'message' => 'Sale not found'];
+    // Generate PDF only — no printing logic
+    $result = generateReceiptPDF($saleId, 'normal');
+    if (!$result['success']) {
+        return ['success' => false, 'message' => $result['message']];
     }
-
-    // Get language and direction
-    $lang = getCurrentLanguage();
-    $isRtl = $lang === 'ar';
     
-    // Load translations
-    $translations = [];
-    $langFile = __DIR__ . "/../lang/{$lang}.php";
-    if (file_exists($langFile)) {
-        $translations = include $langFile;
-    }
-
-    $t = function($key) use ($translations, $lang) {
-        if (isset($translations[$key])) {
-            return $translations[$key];
-        }
-        $enFile = __DIR__ . "/../lang/en.php";
-        if (file_exists($enFile)) {
-            $en = include $enFile;
-            if (isset($en[$key])) {
-                return $en[$key];
-            }
-        }
-        return $key;
-    };
-
-    $settings = getSettings();
-    $storeName = $settings['store_name'] ?? 'POS System';
-    $storeAddress = $settings['store_address'] ?? '';
-    $storePhone = $settings['store_phone'] ?? '';
-    $currency = getCurrencySymbol();
-    $footer = $settings['receipt_footer'] ?? 'Thank you for your business!';
-
-    // Compact thermal layout
-    $itemWidth = 18;
-    $qtyWidth = 3;
-    $priceWidth = 8;
-    $totalWidth = 9;
-    $totalCols = $itemWidth + $qtyWidth + $priceWidth + $totalWidth + 5;
-
-    // Box-drawing characters
-    $topBorder = "┌" . str_repeat("─", $totalCols - 2) . "┐\n";
-    $bottomBorder = "└" . str_repeat("─", $totalCols - 2) . "┘\n";
-    $line = "├" . str_repeat("─", $totalCols - 2) . "┤\n";
-    $doubleLine = "╞" . str_repeat("═", $totalCols - 2) . "╡\n";
-
-    // Helper to pad text for RTL (right-aligned)
-    $pad = function($text, $width) use ($isRtl) {
-        $text = mb_substr($text, 0, $width);
-        if ($isRtl) {
-            return str_pad($text, $width, " ", STR_PAD_LEFT);
-        }
-        return str_pad($text, $width, " ", STR_PAD_RIGHT);
-    };
-
-    $receipt = "";
-
-    // ===== HEADER =====
-    $receipt .= $topBorder;
-    $receipt .= "│ " . $pad(strtoupper($storeName), $totalCols - 4) . " │\n";
-    $receipt .= "├" . str_repeat("─", $totalCols - 2) . "┤\n";
-    if ($storeAddress) {
-        $receipt .= "│ " . $pad($storeAddress, $totalCols - 4) . " │\n";
-    }
-    if ($storePhone) {
-        $receipt .= "│ " . $pad("Tel: " . $storePhone, $totalCols - 4) . " │\n";
-    }
-    $receipt .= $line;
-
-    // ===== INVOICE INFO (Right-aligned in RTL) =====
-    $infoWidth = 14;
-    $valueWidth = 22;
-    $infoTotal = $infoWidth + $valueWidth + 3; // +3 for "│ " and " │"
-
-    if ($isRtl) {
-        // Arabic: label on the right, value on the left
-        $receipt .= sprintf("│ %-{$valueWidth}s %-{$infoWidth}s │\n", $sale['invoice_no'], $t('invoice') . ":");
-        $receipt .= sprintf("│ %-{$valueWidth}s %-{$infoWidth}s │\n", date('Y-m-d H:i:s', strtotime($sale['created_at'])), $t('date') . ":");
-        $receipt .= sprintf("│ %-{$valueWidth}s %-{$infoWidth}s │\n", $sale['cashier'] ?? 'N/A', $t('cashier') . ":");
-        $receipt .= sprintf("│ %-{$valueWidth}s %-{$infoWidth}s │\n", $sale['customer_name'] ?? 'Walk-in', $t('customer') . ":");
-    } else {
-        // English: label on the left, value on the right
-        $receipt .= sprintf("│ %-{$infoWidth}s: %-{$valueWidth}s │\n", $t('invoice'), $sale['invoice_no']);
-        $receipt .= sprintf("│ %-{$infoWidth}s: %-{$valueWidth}s │\n", $t('date'), date('Y-m-d H:i:s', strtotime($sale['created_at'])));
-        $receipt .= sprintf("│ %-{$infoWidth}s: %-{$valueWidth}s │\n", $t('cashier'), $sale['cashier'] ?? 'N/A');
-        $receipt .= sprintf("│ %-{$infoWidth}s: %-{$valueWidth}s │\n", $t('customer'), $sale['customer_name'] ?? 'Walk-in');
-    }
-    $receipt .= $line;
-
-    // ===== TABLE HEADER =====
-    if ($isRtl) {
-        // Arabic: Total ← Price ← Qty ← Item (right-aligned)
-        $receipt .= sprintf(
-            "│ %{$totalWidth}s │ %{$priceWidth}s │ %{$qtyWidth}s │ %-{$itemWidth}s │\n",
-            $t('total'), $t('price'), $t('qty'), $t('item')
-        );
-    } else {
-        // English: Item → Qty → Price → Total (left-aligned)
-        $receipt .= sprintf(
-            "│ %-{$itemWidth}s │ %{$qtyWidth}s │ %{$priceWidth}s │ %{$totalWidth}s │\n",
-            $t('item'), $t('qty'), $t('price'), $t('total')
-        );
-    }
-    $receipt .= $line;
-
-    // ===== TABLE ROWS =====
-    foreach ($sale['items'] as $item) {
-        $name = mb_substr($item['product_name'], 0, $itemWidth);
-        $qty = $item['quantity'];
-        $price = number_format($item['price'], 2);
-        $total = number_format($item['total'], 2);
-
-        if ($isRtl) {
-            // Arabic: Total ← Price ← Qty ← Item
-            $receipt .= sprintf(
-                "│ %{$totalWidth}s │ %{$priceWidth}s │ %{$qtyWidth}s │ %-{$itemWidth}s │\n",
-                $currency . $total, $currency . $price, $qty, $name
-            );
-        } else {
-            // English: Item → Qty → Price → Total
-            $receipt .= sprintf(
-                "│ %-{$itemWidth}s │ %{$qtyWidth}s │ %{$priceWidth}s │ %{$totalWidth}s │\n",
-                $name, $qty, $currency . $price, $currency . $total
-            );
-        }
-    }
-
-    $receipt .= $line;
-
-    // ===== TOTALS =====
-    $labelWidth = 24;
-    $valueWidth2 = 14;
-    if ($isRtl) {
-        // Arabic: value on left, label on right
-        $receipt .= sprintf("│ %-{$valueWidth2}s %-{$labelWidth}s │\n", $currency . number_format($sale['subtotal'], 2), $t('subtotal') . ":");
-        if ($sale['discount'] > 0) {
-            $receipt .= sprintf("│ %-{$valueWidth2}s %-{$labelWidth}s │\n", "-" . $currency . number_format($sale['discount'], 2), $t('discount') . ":");
-        }
-        if ($sale['tax'] > 0) {
-            $receipt .= sprintf("│ %-{$valueWidth2}s %-{$labelWidth}s │\n", $currency . number_format($sale['tax'], 2), $t('tax') . ":");
-        }
-        $receipt .= $doubleLine;
-        $receipt .= sprintf("│ %-{$valueWidth2}s %-{$labelWidth}s │\n", $currency . number_format($sale['total'], 2), $t('total') . ":");
-    } else {
-        // English: label on left, value on right
-        $receipt .= sprintf("│ %-{$labelWidth}s: %{$valueWidth2}s │\n", $t('subtotal'), $currency . number_format($sale['subtotal'], 2));
-        if ($sale['discount'] > 0) {
-            $receipt .= sprintf("│ %-{$labelWidth}s: %{$valueWidth2}s │\n", $t('discount'), "-" . $currency . number_format($sale['discount'], 2));
-        }
-        if ($sale['tax'] > 0) {
-            $receipt .= sprintf("│ %-{$labelWidth}s: %{$valueWidth2}s │\n", $t('tax'), $currency . number_format($sale['tax'], 2));
-        }
-        $receipt .= $doubleLine;
-        $receipt .= sprintf("│ %-{$labelWidth}s: %{$valueWidth2}s │\n", $t('total'), $currency . number_format($sale['total'], 2));
-    }
-
-    // ===== FOOTER =====
-    $receipt .= $bottomBorder;
-    $receipt .= "│ " . $pad($footer, $totalCols - 4) . " │\n";
-    $receipt .= $bottomBorder;
-    $receipt .= "\x0A\x0A";
-
-    // ============================================
-    // PRINTING LOGIC (Bridge/Socket)
-    // ============================================
-    if ($method === 'normal') {
-        return ['success' => true, 'receipt' => $receipt, 'sale' => $sale];
-    }
-
-    $bridgePath = $settings['printer_bridge_path'] ?? 'C:\\POS\\TextPrinter.exe';
-    $printerName = $settings['printer_name'] ?? 'POS-58';
-
-    if (file_exists($bridgePath)) {
-        $tempFile = sys_get_temp_dir() . '/receipt_' . $saleId . '.txt';
-        file_put_contents($tempFile, $receipt);
-        $cmd = sprintf('"%s" "%s" "%s"', $bridgePath, $printerName, $tempFile);
-        exec($cmd . ' 2>&1', $output, $returnCode);
-        unlink($tempFile);
-        if ($returnCode === 0) {
-            return ['success' => true, 'message' => 'Printed successfully!'];
-        } else {
-            return ['success' => false, 'message' => 'Bridge error: ' . implode("\n", $output)];
-        }
-    }
-
-    return ['success' => false, 'message' => 'No printing method available.'];
+    // Return the file path so the frontend can open it
+    return [
+        'success' => true,
+        'file' => '/pos/receipts/' . basename($result['file']),
+        'pdf_base64' => base64_encode(file_get_contents($result['file']))
+    ];
 }
-
 
 // ============================================
 // CUSTOMER FUNCTIONS (with device filter)
@@ -1031,6 +925,7 @@ function createReturn($data) {
         
         // Ensure total_refund is a float, default 0
         $totalRefund = isset($data['total_refund']) ? (float)$data['total_refund'] : 0;
+        $user_id = $data['user_id'];
         
         $stmt = $db->prepare("INSERT INTO returns 
             (sale_id, return_no, return_type, customer_name, customer_phone, user_id, reason, refund_method, total_refund, notes, device_id) 
@@ -1041,7 +936,7 @@ function createReturn($data) {
             $returnType,
             $data['customer_name'] ?? null,
             $data['customer_phone'] ?? null,
-            $data['user_id'],
+            $user_id,
             $data['reason'] ?? null,
             $data['refund_method'] ?? 'cash',
             $totalRefund,
@@ -1051,6 +946,7 @@ function createReturn($data) {
         
         $returnId = $db->lastInsertId();
         
+        // Insert return items and restock
         foreach ($data['items'] as $item) {
             $saleItemId = $item['sale_item_id'] ?? null;
             $stmt = $db->prepare("INSERT INTO return_items (return_id, sale_item_id, product_id, quantity, refund_amount, reason) 
@@ -1068,6 +964,22 @@ function createReturn($data) {
             $stmt->execute([$item['quantity'], $item['product_id']]);
         }
         
+        // ==========================================
+        // 🔥 ADD CASH TRANSACTION (CASH OUT)
+        // ==========================================
+        $stmt = $db->prepare("INSERT INTO cash_transactions 
+            (user_id, device_id, amount, type, reference_id, notes) 
+            VALUES (?, ?, ?, 'return', ?, ?)");
+        $stmt->execute([
+            $user_id,
+            $deviceId,
+            -$totalRefund, // negative = cash OUT (money given back to customer)
+            $returnId,
+            'Return for ' . $returnNo
+        ]);
+        // ==========================================
+        
+        // Update sale return status if linked
         if (isset($data['sale_id']) && $data['sale_id'] > 0) {
             $isFullReturn = ($data['is_full'] ?? false);
             $returnStatus = $isFullReturn ? 'full' : 'partial';
@@ -1324,6 +1236,8 @@ function createTransfer($data) {
 function getTransfers($limit = 50) {
     $db = Database::getInstance()->getConnection();
     $deviceId = getCurrentDeviceId();
+    $limit = (int)$limit; // Ensure it's an integer
+    
     $stmt = $db->prepare("SELECT t.*, 
                           d1.device_name as from_device, 
                           d2.device_name as to_device,
@@ -1333,8 +1247,8 @@ function getTransfers($limit = 50) {
                           LEFT JOIN devices d2 ON t.to_device_id = d2.id
                           LEFT JOIN users u ON t.user_id = u.id
                           WHERE t.from_device_id = ? OR t.to_device_id = ?
-                          ORDER BY t.id DESC LIMIT ?");
-    $stmt->execute([$deviceId, $deviceId, $limit]);
+                          ORDER BY t.id DESC LIMIT " . $limit);
+    $stmt->execute([$deviceId, $deviceId]);
     return $stmt->fetchAll();
 }
 
@@ -1565,19 +1479,7 @@ function deletePurchaseOrder($id) {
     }
     return ['success' => false, 'message' => 'Only pending orders can be deleted.'];
 }
-function getWindowsPrinters() {
-    // Run the Windows command to list printers
-    $output = [];
-    exec('wmic printer get name', $output);
-    $printers = [];
-    foreach ($output as $line) {
-        $line = trim($line);
-        if (!empty($line) && strpos($line, 'Name') === false) {
-            $printers[] = $line;
-        }
-    }
-    return $printers;
-}
+
 function getInstalledPrinters() {
     // Check if we have a cached list in session
     if (isset($_SESSION['cached_printers']) && isset($_SESSION['cached_printers_time'])) {
@@ -1620,4 +1522,235 @@ function getInstalledPrinters() {
     $_SESSION['cached_printers_time'] = time();
     
     return $printers;
+}
+
+function buildReceiptPreview($data) {
+    $settings = buildReceiptSettings($data);
+    $isRtl = ($settings['direction'] ?? 'ltr') === 'rtl';
+    $paperWidth = intval($settings['paper_width'] ?? 40);
+    $fontSize = intval($settings['font_size'] ?? 12);
+    $fontWeight = $settings['font_weight'] ?? 'normal';
+    $borderStyle = $settings['items_table']['border_style'] ?? 'box';
+    $footerText = $settings['footer_text'] ?? 'Thank you for your business!';
+    $currency = getCurrencySymbol();
+    
+    // Column widths
+    $itemWidth = intval(($paperWidth - 8) * 0.45);
+    $qtyWidth = 5;
+    $priceWidth = intval(($paperWidth - 8) * 0.25);
+    $totalWidth = intval(($paperWidth - 8) * 0.25);
+    $totalCols = $itemWidth + $qtyWidth + $priceWidth + $totalWidth + 5;
+    
+    // Border characters
+    if ($borderStyle === 'box') {
+        $topBorder = "┌" . str_repeat("─", $totalCols - 2) . "┐\n";
+        $bottomBorder = "└" . str_repeat("─", $totalCols - 2) . "┘\n";
+        $line = "├" . str_repeat("─", $totalCols - 2) . "┤\n";
+        $doubleLine = "╞" . str_repeat("═", $totalCols - 2) . "╡\n";
+        $vBar = "│";
+    } else {
+        $topBorder = $bottomBorder = $line = $doubleLine = "";
+        $vBar = "";
+    }
+    
+    $receipt = "";
+    $pad = function($text, $width, $align = 'left') use ($isRtl) {
+        $text = mb_substr($text, 0, $width);
+        if ($isRtl) {
+            return str_pad($text, $width, " ", STR_PAD_LEFT);
+        }
+        return str_pad($text, $width, " ", STR_PAD_RIGHT);
+    };
+    
+    // === HEADER ===
+    $receipt .= $topBorder;
+    $receipt .= $vBar . " " . $pad("MY POS STORE", $totalCols - 4) . " " . $vBar . "\n";
+    $receipt .= $vBar . " " . $pad("123 Main Street, City", $totalCols - 4) . " " . $vBar . "\n";
+    $receipt .= $vBar . " " . $pad("Tel: +1234567890", $totalCols - 4) . " " . $vBar . "\n";
+    $receipt .= $line;
+    
+    // === INVOICE INFO ===
+    $receipt .= sprintf($vBar . " %-15s: %-18s " . $vBar . "\n", "Invoice", "INV-20260728-8335");
+    $receipt .= sprintf($vBar . " %-15s: %-18s " . $vBar . "\n", "Date", date('Y-m-d H:i:s'));
+    $receipt .= sprintf($vBar . " %-15s: %-18s " . $vBar . "\n", "Cashier", "Administrator");
+    $receipt .= sprintf($vBar . " %-15s: %-18s " . $vBar . "\n", "Customer", "Walk-in");
+    $receipt .= $line;
+    
+    // === TABLE HEADER ===
+    if ($isRtl) {
+        $receipt .= sprintf($vBar . " %{$totalWidth}s │ %{$priceWidth}s │ %{$qtyWidth}s │ %-{$itemWidth}s " . $vBar . "\n", 
+            "TOTAL", "PRICE", "QTY", "ITEM");
+    } else {
+        $receipt .= sprintf($vBar . " %-{$itemWidth}s │ %{$qtyWidth}s │ %{$priceWidth}s │ %{$totalWidth}s " . $vBar . "\n", 
+            "ITEM", "QTY", "PRICE", "TOTAL");
+    }
+    $receipt .= $line;
+
+    // === TABLE ROWS (Sample data for preview) ===
+    $sampleItems = [
+        ['name' => 'Sample Product', 'qty' => 2, 'price' => 10.00, 'total' => 20.00],
+        ['name' => 'Another Item', 'qty' => 1, 'price' => 15.00, 'total' => 15.00],
+    ];
+    
+    foreach ($sampleItems as $item) {
+        $name = mb_substr($item['name'], 0, $itemWidth);
+        $qty = $item['qty'];
+        $price = $currency . ' ' . number_format($item['price'], 2);
+        $total = $currency . ' ' . number_format($item['total'], 2);
+        
+        if ($isRtl) {
+            $receipt .= sprintf($vBar . " %{$totalWidth}s │ %{$priceWidth}s │ %{$qtyWidth}s │ %-{$itemWidth}s " . $vBar . "\n", 
+                $total, $price, $qty, $name);
+        } else {
+            $receipt .= sprintf($vBar . " %-{$itemWidth}s │ %{$qtyWidth}s │ %{$priceWidth}s │ %{$totalWidth}s " . $vBar . "\n", 
+                $name, $qty, $price, $total);
+        }
+    }
+    $receipt .= $line;
+
+    // === TOTALS ===
+    $receipt .= sprintf($vBar . " %-24s: %12s " . $vBar . "\n", "Subtotal", $currency . " 35.00");
+    $receipt .= sprintf($vBar . " %-24s: %12s " . $vBar . "\n", "Discount", "-" . $currency . " 0.00");
+    $receipt .= sprintf($vBar . " %-24s: %12s " . $vBar . "\n", "Tax", $currency . " 0.00");
+    $receipt .= $doubleLine;
+    $receipt .= sprintf($vBar . " %-24s: %12s " . $vBar . "\n", "TOTAL", $currency . " 35.00");
+    $receipt .= $bottomBorder;
+    
+    // === FOOTER ===
+    $receipt .= $vBar . " " . $pad($footerText, $totalCols - 4) . " " . $vBar . "\n";
+    $receipt .= $bottomBorder;
+    
+    return "<pre style='font-family: \"Courier New\", monospace; font-size: {$fontSize}px; font-weight: {$fontWeight}; max-width: {$paperWidth}ch; margin: 0 auto; background: white; padding: 20px; line-height: 1.4;'>" . htmlspecialchars($receipt) . "</pre>";
+}
+
+function buildReceiptSettings($data) {
+    return [
+        'direction' => $data['direction'] ?? 'ltr',
+        'paper_width' => intval($data['paper_width'] ?? 40),
+        'font_size' => intval($data['font_size'] ?? 12),
+        'font_weight' => $data['font_weight'] ?? 'normal',
+        'footer_text' => $data['footer_text'] ?? 'Thank you for your business!',
+        'store_name' => ['enabled' => isset($data['field_store_name'])],
+        'store_address' => ['enabled' => isset($data['field_store_address'])],
+        'store_phone' => ['enabled' => isset($data['field_store_phone'])],
+        'invoice_no' => ['enabled' => isset($data['field_invoice_no'])],
+        'date' => ['enabled' => isset($data['field_date'])],
+        'cashier' => ['enabled' => isset($data['field_cashier'])],
+        'customer' => ['enabled' => isset($data['field_customer'])],
+        'items_table' => [
+            'enabled' => true, // Default to enabled if not set
+            'border_style' => $data['border_style'] ?? 'box'
+        ],
+        'subtotal' => ['enabled' => isset($data['field_subtotal'])],
+        'discount' => ['enabled' => isset($data['field_discount'])],
+        'tax' => ['enabled' => isset($data['field_tax'])],
+        'total' => ['enabled' => isset($data['field_total'])],
+        'footer' => ['enabled' => isset($data['field_footer'])]
+    ];
+}
+
+function generateReceiptPDF($saleId, $method = 'normal') {
+    $sale = getSaleById($saleId);
+    if (!$sale) {
+        return ['success' => false, 'message' => 'Sale not found'];
+    }
+    
+    $settings = getSettings();
+    $storeName = $settings['store_name'] ?? 'POS System';
+    $storeAddress = $settings['store_address'] ?? '';
+    $storePhone = $settings['store_phone'] ?? '';
+    $currency = getCurrencySymbol();
+    $footerText = $settings['receipt_footer'] ?? 'Thank you for your business!';
+    $isRtl = getCurrentLanguage() === 'ar';
+    
+    // Load template
+    ob_start();
+    require __DIR__ . '/../views/receipt_template.php';
+    $html = ob_get_clean();
+    
+    require_once __DIR__ . '/../vendor/autoload.php';
+    $mpdf = new \Mpdf\Mpdf([
+        'mode'          => 'utf-8',
+        'format'        => [80, 150], // thermal receipt size
+        'margin_top'    => 5,
+        'margin_bottom' => 5,
+        'margin_left'   => 5,
+        'margin_right'  => 5,
+        'default_font'  => 'dejavusans',
+        'autoScriptToLang' => true,
+        'autoLangToFont'   => true,
+    ]);
+    
+    // Optional: register Amiri font if available
+    $fontPath = __DIR__ . '/../assets/fonts/Amiri-Regular.ttf';
+    $fontBold = __DIR__ . '/../assets/fonts/Amiri-Bold.ttf';
+    if (file_exists($fontPath)) {
+        $mpdf->fontdata['amiri'] = [
+            'R' => $fontPath,
+            'B' => file_exists($fontBold) ? $fontBold : $fontPath,
+        ];
+        $mpdf->default_font = 'amiri';
+    }
+    
+    $mpdf->SetTitle('Receipt ' . $sale['invoice_no']);
+    $mpdf->useAdobeCJK = true;
+    $mpdf->autoScriptToLang = true;
+    $mpdf->autoLangToFont = true;
+    
+    $mpdf->WriteHTML($html);
+    
+    // Save to a permanent folder for inspection
+    $receiptDir = __DIR__ . '/../receipts';
+    if (!is_dir($receiptDir)) {
+        mkdir($receiptDir, 0777, true);
+    }
+    $pdfFile = $receiptDir . '/receipt_' . $saleId . '_' . date('Ymd_His') . '.pdf';
+    $mpdf->Output($pdfFile, \Mpdf\Output\Destination::FILE);
+    
+    return ['success' => true, 'file' => $pdfFile];
+}
+
+function buildTextReceipt($sale) {
+    $settings = getSettings();
+    $storeName = $settings['store_name'] ?? 'POS System';
+    $storeAddress = $settings['store_address'] ?? '';
+    $storePhone = $settings['store_phone'] ?? '';
+    $currency = getCurrencySymbol();
+    $footer = $settings['receipt_footer'] ?? 'Thank you!';
+    
+    $receipt = "========================\n";
+    $receipt .= "   " . strtoupper($storeName) . "\n";
+    if ($storeAddress) $receipt .= "   " . $storeAddress . "\n";
+    if ($storePhone) $receipt .= "   Tel: " . $storePhone . "\n";
+    $receipt .= "========================\n";
+    $receipt .= "Invoice: " . $sale['invoice_no'] . "\n";
+    $receipt .= "Date: " . date('Y-m-d H:i:s', strtotime($sale['created_at'])) . "\n";
+    $receipt .= "Cashier: " . ($sale['cashier'] ?? 'N/A') . "\n";
+    $receipt .= "Customer: " . ($sale['customer_name'] ?? 'Walk-in') . "\n";
+    $receipt .= "------------------------\n";
+    $receipt .= "ITEM          QTY   PRICE   TOTAL\n";
+    $receipt .= "------------------------\n";
+    foreach ($sale['items'] as $item) {
+        $name = substr($item['product_name'], 0, 14);
+        $receipt .= sprintf("%-14s %3d  %6s  %7s\n", 
+            $name, 
+            $item['quantity'], 
+            $currency . number_format($item['price'], 2), 
+            $currency . number_format($item['total'], 2)
+        );
+    }
+    $receipt .= "------------------------\n";
+    $receipt .= sprintf("%-28s %s\n", "Subtotal:", $currency . number_format($sale['subtotal'], 2));
+    if ($sale['discount'] > 0) {
+        $receipt .= sprintf("%-28s %s\n", "Discount:", "-" . $currency . number_format($sale['discount'], 2));
+    }
+    if ($sale['tax'] > 0) {
+        $receipt .= sprintf("%-28s %s\n", "Tax:", $currency . number_format($sale['tax'], 2));
+    }
+    $receipt .= "========================\n";
+    $receipt .= sprintf("%-28s %s\n", "TOTAL:", $currency . number_format($sale['total'], 2));
+    $receipt .= "========================\n";
+    $receipt .= "    " . $footer . "\n";
+    $receipt .= "========================\n";
+    return $receipt;
 }

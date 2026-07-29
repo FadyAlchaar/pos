@@ -11,7 +11,13 @@
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div style="position: relative; flex: 1; max-width: 300px;">
                 <i class="fas fa-search" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--gray);"></i>
-                <input type="text" id="searchSale" class="form-control" placeholder="Search invoice or customer..." style="padding-left: 40px;" onkeyup="loadSales(this.value)">
+                <div class="input-clear-wrapper">
+                    <input type="text" id="searchSale" class="form-control" placeholder="Search invoice or customer..." 
+                        style="padding-left: 40px;" 
+                        oninput="toggleClearButton(this)"
+                        onkeyup="loadSales(this.value)">
+                    <button type="button" class="clear-btn" onclick="clearInput(this)">✕</button>
+                </div>
             </div>
             <div>
                 <button class="btn btn-sm btn-success" onclick="exportSales()">
@@ -247,35 +253,36 @@ function printNormalReceipt(id) {
         .then(res => res.json())
         .then(data => {
             if (data.success) {
-                const s = data.data;
-                const items = s.items.map(item => 
-                    `${item.product_name} x${item.quantity} = ${formatPrice(item.total)}`
-                ).join('\n');
-                
-                const receipt = `
-================================
-        POS SYSTEM
-================================
-Invoice: ${s.invoice_no}
-Date: ${new Date(s.created_at).toLocaleString()}
---------------------------------
-${items}
---------------------------------
-Subtotal: ${formatPrice(s.subtotal)}
-Discount: ${formatPrice(s.discount)}
-Tax: ${formatPrice(s.tax)}
-TOTAL: ${formatPrice(s.total)}
-================================
-Thank you for your business!
-================================
-                `;
-                
-                const win = window.open('', '_blank', 'width=400,height=600');
-                win.document.write('<pre style="font-family: monospace; font-size: 13px; padding: 20px;">' + receipt + '</pre>');
-                win.document.close();
-                win.print();
+                // Instead of building text receipt, print PDF
+                printReceipt(id, 'normal');
             }
         });
+}
+
+function printReceipt(id, method) {
+    const formData = new FormData();
+    formData.append('id', id);
+    formData.append('method', method);
+    formData.append('csrf_token', csrfToken);
+
+    fetch('?ajax=1&action=print_receipt', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success && data.pdf_base64) {
+            // Open PDF in new window
+            const win = window.open('', '_blank');
+            win.document.write('<html><body style="margin:0;"><embed width="100%" height="100%" src="data:application/pdf;base64,' + data.pdf_base64 + '" type="application/pdf"></body></html>');
+            win.document.close();
+            win.print();
+        } else if (data.success) {
+            alert('✅ ' + data.message);
+        } else {
+            alert('❌ Error: ' + data.message);
+        }
+    });
 }
 
 // ============================================

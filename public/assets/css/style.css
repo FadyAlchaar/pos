@@ -542,3 +542,39 @@ body.sidebar-hidden .content {
 .sidebar-nav a {
     scroll-margin-top: 0;
 }
+/* ===== INPUT CLEAR BUTTON ===== */
+.input-clear-wrapper {
+    position: relative;
+    display: inline-block;
+    width: 100%;
+}
+
+.input-clear-wrapper input {
+    width: 100%;
+    padding-right: 30px; /* space for the clear button */
+}
+
+.input-clear-wrapper .clear-btn {
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: transparent;
+    border: none;
+    color: #aaa;
+    font-size: 16px;
+    cursor: pointer;
+    display: none; /* hidden by default */
+    padding: 2px 6px;
+    border-radius: 50%;
+    transition: 0.2s;
+}
+
+.input-clear-wrapper .clear-btn:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+.input-clear-wrapper .clear-btn.show {
+    display: block;
+}

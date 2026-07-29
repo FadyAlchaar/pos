@@ -1,6 +1,7 @@
 <?php
 $products = getAllProducts('', 10, 0);
 $categories = getAllCategories();
+$autoPrint = getSetting('auto_print') ?? '1'; // Default: enabled
 ?>
 
 <div class="pos-container">
@@ -26,11 +27,14 @@ $categories = getAllCategories();
                 <div class="form-group">
                     <label><i class="fas fa-barcode"></i> <?= __('scan_barcode') ?></label>
                     <div class="d-flex gap-2">
-                        <input type="text" id="barcodeScanner" class="form-control" 
-                               placeholder="Scan or type barcode..." 
-                               inputmode="none"
-                               autocomplete="off"
-                               style="font-size: 16px; height: 45px;">
+                        <div class="input-clear-wrapper" style="flex:1;">
+                            <input type="text" id="barcodeScanner" class="form-control" 
+                                placeholder="<?= __('Scan or type barcode...') ?>" 
+                                inputmode="none" autocomplete="off"
+                                style="font-size: 16px; height: 45px; padding-right: 35px;"
+                                oninput="toggleClearButton(this)">
+                            <button type="button" class="clear-btn" onclick="clearInput(this)">✕</button>
+                        </div>
                         <button class="btn btn-primary" onclick="manualScan()">
                             <i class="fas fa-search"></i>
                         </button>
@@ -40,9 +44,13 @@ $categories = getAllCategories();
                 <!-- Quick Product Search -->
                 <div class="form-group">
                     <label><i class="fas fa-search"></i> <?= __('search_products') ?></label>
-                    <input type="text" id="quickSearch" class="form-control" 
-                           placeholder="Type product name..." 
-                           onkeyup="searchProducts(this.value)">
+                    <div class="input-clear-wrapper">
+                        <input type="text" id="quickSearch" class="form-control" 
+                            placeholder="<?= __('Type product name...') ?>" 
+                            oninput="toggleClearButton(this)" 
+                            onkeyup="searchProducts(this.value)">
+                        <button type="button" class="clear-btn" onclick="clearInput(this)">✕</button>
+                    </div>
                     <div id="quickSearchResults" style="max-height: 200px; overflow-y: auto; display: none; border: 1px solid #e9ecef; border-radius: 8px; margin-top: 5px; background: #fff;"></div>
                 </div>
             </div>
@@ -187,6 +195,7 @@ $categories = getAllCategories();
 <script>
 let cart = [];
 const csrfToken = '<?= generateCSRFToken() ?>';
+const autoPrintEnabled = <?= $autoPrint === '1' ? 'true' : 'false' ?>;
 
 // ============================================
 // QUICK SEARCH
@@ -413,7 +422,7 @@ function updateCart() {
 }
 
 // ============================================
-// CHECKOUT
+// CHECKOUT (FIXED)
 // ============================================
 function checkout() {
     if (cart.length === 0) {
@@ -454,7 +463,10 @@ function checkout() {
 
     fetch('?ajax=1&action=create_sale', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+        },
         body: JSON.stringify(data)
     })
     .then(res => res.json())
@@ -463,11 +475,9 @@ function checkout() {
             alert('<?= __('sale_completed') ?> ' + result.invoice_no);
 
             // ==========================================
-            // 🔥 AUTO-PRINT LOGIC — ADD THIS BLOCK
+            // AUTO-PRINT LOGIC
             // ==========================================
-            const autoPrint = <?= ($settings['auto_print'] ?? '1') == '1' ? 'true' : 'false' ?>;
-
-            if (autoPrint) {
+            if (autoPrintEnabled) {
                 // Auto-print without asking
                 printReceiptFromServer(result.sale_id, 'usb');
             } else {
@@ -477,7 +487,6 @@ function checkout() {
                     printReceiptFromServer(result.sale_id, 'usb');
                 }
             }
-            // ==========================================
 
             cart = [];
             updateCartDisplay();
@@ -487,7 +496,9 @@ function checkout() {
             alert('<?= __('error_unknown') ?>: ' + (result.message || '<?= __('error_unknown') ?>'));
         }
     })
-    .catch(err => alert('<?= __('error_unknown') ?>: Network error: ' + err))
+    .catch(err => {
+        alert('<?= __('error_unknown') ?>: Network error: ' + err.message);
+    })
     .finally(() => {
         btn.innerHTML = '<i class="fas fa-check"></i> <?= __('checkout') ?>';
         btn.disabled = false;
@@ -506,7 +517,11 @@ setInterval(function() {
         }
     }
 }, 3000);
-function printReceiptFromServer(saleId, method = 'usb') {
+
+// ============================================
+// PRINT RECEIPT FROM SERVER
+// ============================================
+function printReceiptFromServer(saleId, method = 'normal') {
     const formData = new FormData();
     formData.append('id', saleId);
     formData.append('method', method);
@@ -518,14 +533,72 @@ function printReceiptFromServer(saleId, method = 'usb') {
     })
     .then(res => res.json())
     .then(data => {
-        if (data.success) {
-            alert('<?= __('print_success') ?>');
+        if (data.success && data.pdf_base64) {
+            // Try to open in new window
+            const win = window.open('', '_blank');
+            
+            if (!win) {
+                // Popup blocked — fallback to download
+                const link = document.createElement('a');
+                link.href = 'data:application/pdf;base64,' + data.pdf_base64;
+                link.download = 'receipt_' + Date.now() + '.pdf';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                alert('✅ PDF downloaded. Please open and print it manually.');
+                return;
+            }
+            
+            // Write the PDF viewer HTML
+            win.document.write(`
+                <html>
+                    <head>
+                        <title>Receipt</title>
+                        <style>
+                            body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; flex-direction: column; }
+                            embed { width: 100%; height: 100%; border: none; }
+                            .toolbar { position: fixed; top: 10px; right: 20px; z-index: 1000; display: flex; gap: 8px; }
+                            .toolbar button { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+                            .btn-print { background: #2ecc71; color: #fff; }
+                            .btn-print:hover { background: #27ae60; }
+                            .btn-close { background: #e74c3c; color: #fff; }
+                            .btn-close:hover { background: #c0392b; }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="toolbar">
+                            <button class="btn-print" onclick="document.querySelector('embed').print()">🖨️ Print</button>
+                            <button class="btn-close" onclick="window.close()">✕ Close</button>
+                        </div>
+                        <embed width="100%" height="100%" src="data:application/pdf;base64,${data.pdf_base64}" type="application/pdf">
+                        <script>
+                            // Optional: auto-print after a short delay (uncomment to enable)
+                            // setTimeout(() => { document.querySelector('embed').print(); }, 500);
+                        <\/script>
+                    </body>
+                </html>
+            `);
+            win.document.close();
         } else {
-            alert('<?= __('print_failed') ?>: ' + (data.message || '<?= __('unknown_error') ?>'));
+            alert('❌ ' + (data.message || 'PDF generation failed.'));
         }
     })
     .catch(err => {
-        alert('<?= __('print_error') ?>: ' + err.message);
+        alert('Error: ' + err.message);
     });
+}
+
+// ============================================
+// CLEAR INPUT
+// ============================================
+function clearInput(btn) {
+    const input = btn.closest('.input-clear-wrapper').querySelector('input');
+    input.value = '';
+    input.focus();
+    btn.classList.remove('show');
+    if (input.id === 'barcodeScanner') {
+        input.focus();
+        input.select();
+    }
 }
 </script>

@@ -441,6 +441,11 @@
                             <i class="fas fa-warehouse"></i> <?= __('inventory') ?>
                         </a>
                         <?php endif; ?>
+                        <?php if (hasPermission('view_reports')): ?>
+                        <a href="?route=cash_report" class="<?= $active === 'cash_report' ? 'active' : '' ?>">
+                            <i class="fas fa-money-bill-wave"></i> <?= __('cash_report') ?>
+                        </a>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <?php endif; ?>

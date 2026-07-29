@@ -16,7 +16,13 @@ $canManage = hasPermission('manage_categories');
         <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
             <div style="position: relative; flex: 1; max-width: 300px;">
                 <i class="fas fa-search" style="position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--gray);"></i>
-                <input type="text" id="searchCategory" class="form-control" placeholder="<?= __('search_categories') ?>" style="padding-left: 40px;" onkeyup="loadCategories(this.value)">
+                <div class="input-clear-wrapper">
+                    <input type="text" id="searchCategory" class="form-control" placeholder="<?= __('search_categories') ?>" 
+                        style="padding-left: 40px;"
+                        oninput="toggleClearButton(this)" 
+                        onkeyup="loadCategories(this.value)">
+                    <button type="button" class="clear-btn" onclick="clearInput(this)">✕</button>
+                </div>
             </div>
             <button class="btn btn-sm btn-outline" onclick="loadCategories()"><i class="fas fa-sync"></i> <?= __('refresh') ?></button>
         </div>

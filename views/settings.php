@@ -11,6 +11,7 @@ $canManage = hasPermission('manage_settings');
     <h4 style="font-weight: 700; color: var(--dark); margin: 0;"><?= __('settings') ?></h4>
 </div>
 
+<div class="row g-4">
     <!-- ===== STORE INFORMATION ===== -->
     <div class="col-md-6">
         <div class="card fade-in">
@@ -40,9 +41,10 @@ $canManage = hasPermission('manage_settings');
                         <label><i class="fas fa-envelope"></i> <?= __('store_email') ?></label>
                         <input type="email" id="store_email" name="store_email" class="form-control" value="<?= htmlspecialchars($settings['store_email'] ?? '') ?>">
                     </div>
-                </div>
+                </form>
             </div>
         </div>
+    </div>
 
     <!-- ===== SYSTEM SETTINGS ===== -->
     <div class="col-md-6">
@@ -76,13 +78,22 @@ $canManage = hasPermission('manage_settings');
                         <label><i class="fas fa-file-alt"></i> <?= __('receipt_footer') ?></label>
                         <textarea id="receipt_footer" name="receipt_footer" class="form-control" rows="3"><?= htmlspecialchars($settings['receipt_footer'] ?? 'Thank you for your business!') ?></textarea>
                     </div>
+
+                    <!-- Receipt Designer Link -->
+                    <div class="form-group mt-3">
+                        <a href="?route=receipt_designer" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-paint-brush"></i> <?= __('open_receipt_designer') ?>
+                        </a>
+                        <small class="text-muted d-block"><?= __('design_your_receipt_layout') ?></small>
+                    </div>
                 </form>
             </div>
         </div>
+    </div>
 
-    <!-- ===== PRINTER SETTINGS ===== -->
-     <?php if ($canManage): ?>
-    <div class="col-md-12 mt-4">
+    <!-- ===== PRINTER CONFIGURATION ===== -->
+    <?php if ($canManage): ?>
+    <div class="col-md-12 mt-2">
         <div class="card fade-in">
             <div class="card-header">
                 <h5 class="mb-0"><i class="fas fa-print"></i> <?= __('printer_configuration') ?></h5>
@@ -91,58 +102,70 @@ $canManage = hasPermission('manage_settings');
                 <form id="printerSettingsForm">
                     <input type="hidden" name="csrf_token" value="<?= generateCSRFToken() ?>">
 
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label><i class="fas fa-print"></i> <?= __('printer_type') ?></label>
-                                <select id="printer_type" name="printer_type" class="form-control" onchange="togglePrinterFields()">
-                                    <option value="normal" <?= ($settings['printer_type'] ?? 'normal') === 'normal' ? 'selected' : '' ?>>Normal Printer (Browser)</option>
-                                    <option value="usb" <?= ($settings['printer_type'] ?? 'normal') === 'usb' ? 'selected' : '' ?>>USB Thermal Printer</option>
-                                    <option value="network" <?= ($settings['printer_type'] ?? 'normal') === 'network' ? 'selected' : '' ?>>Network Thermal Printer</option>
-                                </select>
+                    <!-- ===== PRINTING METHOD ===== -->
+                    <div class="form-group">
+                        <label><i class="fas fa-cogs"></i> <?= __('printing_method') ?></label>
+                        <select id="printer_method" name="printer_method" class="form-control" onchange="togglePrinterFields()">
+                            <option value="windows" <?= ($settings['printer_method'] ?? 'windows') === 'windows' ? 'selected' : '' ?>>
+                                <?= __('windows_drivers') ?>
+                            </option>
+                            <option value="network" <?= ($settings['printer_method'] ?? 'windows') === 'network' ? 'selected' : '' ?>>
+                                <?= __('network_printer_direct') ?>
+                            </option>
+                        </select>
+                        <small class="text-muted"><?= __('printer_method_description') ?></small>
+                    </div>
+
+                    <!-- ===== WINDOWS PRINTER DROPDOWN ===== -->
+                    <div class="form-group" id="windowsPrinterGroup">
+                        <label><i class="fas fa-print"></i> <?= __('windows_printer_name') ?></label>
+                        <select id="printer_name" name="printer_name" class="form-control">
+                            <option value=""><?= __('loading_printers') ?>...</option>
+                        </select>
+                        <small class="text-muted"><?= __('select_from_installed_printers') ?></small>
+                    </div>
+
+                    <!-- ===== NETWORK PRINTER SETTINGS ===== -->
+                    <div class="form-group" id="networkPrinterGroup" style="display:none;">
+                        <div class="row">
+                            <div class="col-md-8">
+                                <label><i class="fas fa-network-wired"></i> <?= __('printer_ip_address') ?></label>
+                                <input type="text" id="printer_ip" name="printer_ip" class="form-control" 
+                                    placeholder="192.168.1.100" 
+                                    value="<?= htmlspecialchars($settings['printer_ip'] ?? '192.168.1.100') ?>">
+                            </div>
+                            <div class="col-md-4">
+                                <label><i class="fas fa-plug"></i> <?= __('port') ?></label>
+                                <input type="text" id="printer_port" name="printer_port" class="form-control" 
+                                    placeholder="9100" 
+                                    value="<?= htmlspecialchars($settings['printer_port'] ?? '9100') ?>">
                             </div>
                         </div>
-                        <div class="form-group" id="printerNameGroup">
-                            <label><i class="fas fa-print"></i> <?= __('windows_printer_name') ?></label>
-                            <select id="printer_name" name="printer_name" class="form-control">
-                                <option value=""><?= __('loading_printers') ?>...</option>
-                            </select>
-                            <small class="text-muted"><?= __('select_from_installed_printers') ?></small>
-                        </div>
-                        <div class="col-md-4" id="printerNetworkGroup" style="display:none;">
-                            <div class="form-group">
-                                <label><i class="fas fa-network-wired"></i> <?= __('printer_ip') ?></label>
-                                <input type="text" id="printer_ip" name="printer_ip" class="form-control" placeholder="192.168.1.100" value="<?= htmlspecialchars($settings['printer_ip'] ?? '') ?>">
-                            </div>
-                            <div class="form-group">
-                                <label><i class="fas fa-plug"></i> <?= __('printer_port') ?></label>
-                                <input type="text" id="printer_port" name="printer_port" class="form-control" placeholder="9100" value="<?= htmlspecialchars($settings['printer_port'] ?? '9100') ?>">
-                            </div>
-                            <div class="form-group">
-                                <label><i class="fas fa-code"></i> C# Bridge Executable Path</label>
-                                <input type="text" id="printer_bridge_path" name="printer_bridge_path" class="form-control" 
-                                    placeholder="C:\POS\TextPrinter.exe" 
-                                    value="<?= htmlspecialchars($settings['printer_bridge_path'] ?? 'C:\\POS\\TextPrinter.exe') ?>">
-                                <small class="text-muted">Full path to the compiled TextPrinter.exe (supports Arabic fonts on thermal printers).</small>
-                            </div>
-                            <div class="form-group">
-                                <label><i class="fas fa-print"></i> Auto-print after checkout</label>
-                                <select id="auto_print" name="auto_print" class="form-control">
-                                    <option value="1" <?= ($settings['auto_print'] ?? '1') == '1' ? 'selected' : '' ?>>Yes</option>
-                                    <option value="0" <?= ($settings['auto_print'] ?? '1') == '0' ? 'selected' : '' ?>>No</option>
-                                </select>
+                        <small class="text-muted"><?= __('network_printer_description') ?></small>
+                    </div>
+
+                    <!-- ===== C# BRIDGE PATH ===== -->
+                    <div class="form-group">
+                        <label><i class="fas fa-code"></i> <?= __('bridge_executable_path') ?></label>
+                        <input type="text" id="printer_bridge_path" name="printer_bridge_path" class="form-control" 
+                            placeholder="C:\POS\TextPrinter.exe" 
+                            value="<?= htmlspecialchars($settings['printer_bridge_path'] ?? 'C:\\POS\\TextPrinter.exe') ?>">
+                        <small class="text-muted"><?= __('bridge_path_description') ?></small>
+                    </div>
+
+                    <!-- ===== AUTO-PRINT TOGGLE ===== -->
+                    <div class="form-group mt-3">
+                        <label><i class="fas fa-toggle-on"></i> <?= __('auto_print_after_sale') ?></label>
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="auto_print" name="auto_print" 
+                                    value="1" <?= ($settings['auto_print'] ?? '1') == '1' ? 'checked' : '' ?>>
+                                <label class="form-check-label" for="auto_print">
+                                    <?= __('auto_print_enabled') ?>
+                                </label>
                             </div>
                         </div>
-                        <div class="col-md-4">
-                            <div class="form-group">
-                                <label><i class="fas fa-copy"></i> <?= __('receipt_copies') ?></label>
-                                <select id="receipt_copies" name="receipt_copies" class="form-control">
-                                    <?php for ($i = 1; $i <= 3; $i++): ?>
-                                        <option value="<?= $i ?>" <?= ($settings['receipt_copies'] ?? 1) == $i ? 'selected' : '' ?>><?= $i ?></option>
-                                    <?php endfor; ?>
-                                </select>
-                            </div>
-                        </div>
+                        <small class="text-muted"><?= __('auto_print_description') ?></small>
                     </div>
                 </form>
             </div>
@@ -151,11 +174,11 @@ $canManage = hasPermission('manage_settings');
     <?php endif; ?>
 
     <!-- ===== EXPENSE CATEGORIES ===== -->
-    <div class="col-md-12 mt-4">
+    <div class="col-md-12 mt-2">
         <div class="card fade-in">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="fas fa-tags"></i> <?= __('expense_categories') ?></h5>
-                <button class="btn btn-sm btn-primary" onclick="addExpenseCategory()">
+                <button class="btn btn-sm btn-primary" id="addCategoryBtn" onclick="addExpenseCategory()">
                     <i class="fas fa-plus"></i> <?= __('add_category') ?>
                 </button>
             </div>
@@ -177,10 +200,10 @@ $canManage = hasPermission('manage_settings');
     </div>
 
     <!-- ===== SAVE ALL SETTINGS ===== -->
-    <div class="col-md-12 mt-4">
+    <div class="col-md-12 mt-2">
         <div class="card fade-in">
             <div class="card-body text-center">
-                <button class="btn btn-primary btn-lg" onclick="saveAllSettings()">
+                <button class="btn btn-primary btn-lg" id="saveSettingsBtn" onclick="saveAllSettings()">
                     <i class="fas fa-save"></i> <?= __('save_all_settings') ?>
                 </button>
                 <button class="btn btn-outline btn-lg ms-2" onclick="location.reload()">
@@ -195,18 +218,6 @@ $canManage = hasPermission('manage_settings');
 <div id="settingsMessage" style="display:none; margin-top: 20px;"></div>
 
 <script>
-// ============================================
-// TOGGLE PRINTER FIELDS
-// ============================================
-function togglePrinterFields() {
-    const type = document.getElementById('printer_type').value;
-    document.getElementById('printerNameGroup').style.display = (type === 'usb') ? 'block' : 'none';
-    document.getElementById('printerNetworkGroup').style.display = (type === 'network') ? 'flex' : 'none';
-}
-
-// Initial toggle
-document.addEventListener('DOMContentLoaded', togglePrinterFields);
-
 // ============================================
 // EXPENSE CATEGORIES
 // ============================================
@@ -256,68 +267,16 @@ function escapeHtml(text) {
 }
 
 // ============================================
-// SAVE ALL SETTINGS
+// PRINTER FIELDS TOGGLE
 // ============================================
-function saveAllSettings() {
-    // Collect all form data
-    const forms = ['settingsForm', 'systemSettingsForm', 'printerSettingsForm'];
-    const formData = new FormData();
-    
-    forms.forEach(formId => {
-        const form = document.getElementById(formId);
-        if (form) {
-            const inputs = form.querySelectorAll('input, select, textarea');
-            inputs.forEach(input => {
-                if (input.name) {
-                    formData.append(input.name, input.value);
-                }
-            });
-        }
-    });
-    
-    // Add expense categories
-    formData.append('expense_categories', expenseCategories.join(','));
-    formData.append('csrf_token', '<?= generateCSRFToken() ?>');
-    
-    // Debug: log form data to console
-    console.log('Saving settings:');
-    for (let pair of formData.entries()) {
-        console.log(pair[0] + ': ' + pair[1]);
-    }
-    
-    const btn = document.querySelector('.btn-primary');
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <?= __('Saving...') ?>';
-    btn.disabled = true;
-    
-    fetch('?ajax=1&action=update_settings', {
-        method: 'POST',
-        body: formData
-    })
-    .then(res => res.json())
-    .then(data => {
-        const msg = document.getElementById('settingsMessage');
-        msg.style.display = 'block';
-        if (data.success) {
-            msg.innerHTML = `<div class="alert alert-success">✅ ${data.message}</div>`;
-        } else {
-            msg.innerHTML = `<div class="alert alert-danger">❌ Error: ${data.message}</div>`;
-        }
-        setTimeout(() => { msg.style.display = 'none'; }, 5000);
-    })
-    .catch(err => {
-        alert('<?= __('Network error: ') ?>' + err);
-    })
-    .finally(() => {
-        btn.innerHTML = '<i class="fas fa-save"></i> <?= __('Save All Settings') ?>';
-        btn.disabled = false;
-    });
+function togglePrinterFields() {
+    const method = document.getElementById('printer_method').value;
+    document.getElementById('windowsPrinterGroup').style.display = method === 'windows' ? 'block' : 'none';
+    document.getElementById('networkPrinterGroup').style.display = method === 'network' ? 'block' : 'none';
 }
 
-// Load expense categories on page load
-document.addEventListener('DOMContentLoaded', loadExpenseCategories);
-
 // ============================================
-// LOAD INSTALLED PRINTERS VIA AJAX
+// LOAD INSTALLED PRINTERS
 // ============================================
 function loadPrinters() {
     const select = document.getElementById('printer_name');
@@ -327,7 +286,6 @@ function loadPrinters() {
         .then(res => res.json())
         .then(data => {
             if (data.success && data.data.length > 0) {
-                // Clear existing options (keep the first placeholder)
                 select.innerHTML = '<option value=""><?= __('select_a_printer') ?></option>';
                 data.data.forEach(printer => {
                     const option = document.createElement('option');
@@ -347,25 +305,88 @@ function loadPrinters() {
         });
 }
 
-// Load printers when the page is ready
+// ============================================
+// SAVE ALL SETTINGS (FIXED)
+// ============================================
+function saveAllSettings() {
+    const forms = ['settingsForm', 'systemSettingsForm', 'printerSettingsForm'];
+    const formData = new FormData();
+    
+    forms.forEach(formId => {
+        const form = document.getElementById(formId);
+        if (form) {
+            const inputs = form.querySelectorAll('input, select, textarea');
+            inputs.forEach(input => {
+                if (input.name) {
+                    if (input.type === 'checkbox') {
+                        formData.append(input.name, input.checked ? '1' : '0');
+                    } else {
+                        formData.append(input.name, input.value);
+                    }
+                }
+            });
+        }
+    });
+    
+    formData.append('expense_categories', expenseCategories.join(','));
+    formData.append('csrf_token', '<?= generateCSRFToken() ?>');
+    
+    // Target the specific save button by ID
+    const btn = document.getElementById('saveSettingsBtn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <?= __('saving') ?>...';
+    btn.disabled = true;
+
+    fetch('?ajax=1&action=update_settings', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        const msg = document.getElementById('settingsMessage');
+        msg.style.display = 'block';
+        if (data.success) {
+            msg.innerHTML = `<div class="alert alert-success">✅ ${data.message}</div>`;
+        } else {
+            msg.innerHTML = `<div class="alert alert-danger">❌ Error: ${data.message}</div>`;
+        }
+        setTimeout(() => { msg.style.display = 'none'; }, 5000);
+    })
+    .catch(err => {
+        alert('<?= __('network_error') ?>: ' + err);
+    })
+    .finally(() => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    });
+}
+
+// ============================================
+// INITIALIZE
+// ============================================
 document.addEventListener('DOMContentLoaded', function() {
+    // Expense categories
+    loadExpenseCategories();
+    
+    // Printer fields
+    togglePrinterFields();
+    
+    // Load printers dropdown
     loadPrinters();
 });
-
-document.addEventListener('DOMContentLoaded', function() {
-    loadPrinters();
-});
-
 </script>
 
 <style>
 #printerNetworkGroup {
-    display: flex;
+    display: none;
     flex-wrap: wrap;
     gap: 15px;
 }
 #printerNetworkGroup .form-group {
     flex: 1;
     min-width: 120px;
+}
+#windowsPrinterGroup {
+    display: block;
 }
 </style>
