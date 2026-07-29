@@ -72,6 +72,16 @@ $user_id = $_SESSION['user_id'] ?? 0;
     </div>
 </div>
 
+<!-- ===== CHART ===== -->
+<div class="card fade-in mb-4">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-chart-line"></i> <?= __('daily_sales_trend') ?></h5>
+    </div>
+    <div class="card-body">
+        <canvas id="salesChart" height="120"></canvas>
+    </div>
+</div>
+
 <!-- ===== WELCOME CARD ===== -->
 <div class="card fade-in">
     <div class="card-body text-center" style="padding: 50px 30px;">
@@ -166,5 +176,48 @@ function closeShift() {
 // ============================================
 document.addEventListener('DOMContentLoaded', function() {
     loadBalance();
+});
+
+// ============================================
+// DASHBOARD CHART
+// ============================================
+document.addEventListener('DOMContentLoaded', function() {
+    fetch('?ajax=1&action=get_dashboard_chart_data')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.labels && data.data) {
+                const ctx = document.getElementById('salesChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            label: '<?= __('daily_sales') ?>',
+                            data: data.data,
+                            borderColor: '#6c63ff',
+                            backgroundColor: 'rgba(108, 99, 255, 0.1)',
+                            tension: 0.3,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return '<?= getCurrencySymbol() ?>' + value;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        });
 });
 </script>

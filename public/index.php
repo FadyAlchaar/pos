@@ -588,20 +588,37 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
         case 'create_expense':
             requirePermission('manage_expenses');
-            $data = [
-                'category_id' => $_POST['category_id'] ?? 0,
-                'amount' => $_POST['amount'] ?? 0,
-                'description' => $_POST['description'] ?? null,
-                'expense_date' => $_POST['expense_date'] ?? date('Y-m-d'),
-                'user_id' => $_SESSION['user_id'] ?? 0,
-                'payment_method' => $_POST['payment_method'] ?? 'cash'
-            ];
-            if ($data['category_id'] <= 0 || $data['amount'] <= 0) {
+            
+            // Get data from POST
+            $category = $_POST['category'] ?? '';
+            $amount = floatval($_POST['amount'] ?? 0);
+            $description = $_POST['description'] ?? null;
+            $expense_date = $_POST['expense_date'] ?? date('Y-m-d');
+            $payment_method = $_POST['payment_method'] ?? 'cash';
+            $user_id = $_SESSION['user_id'] ?? 0;
+            
+            // Validate
+            if (empty($category) || $amount <= 0) {
                 $response = ['success' => false, 'message' => 'Category and amount are required.'];
                 break;
             }
+            
+            // Build data
+            $data = [
+                'category' => $category,
+                'amount' => $amount,
+                'description' => $description,
+                'expense_date' => $expense_date,
+                'payment_method' => $payment_method,
+                'user_id' => $user_id
+            ];
+            
             $result = createExpense($data);
-            $response = ['success' => $result, 'message' => $result ? 'Expense added!' : 'Failed to add expense.'];
+            if ($result) {
+                $response = ['success' => true, 'message' => 'Expense added!'];
+            } else {
+                $response = ['success' => false, 'message' => 'Failed to add expense.'];
+            }
             break;
 
         case 'update_expense':
@@ -1497,6 +1514,104 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 $id = $db->lastInsertId();
             }
             $response = ['success' => $result, 'message' => $result ? 'Template saved!' : 'Save failed.', 'id' => $id];
+            break;
+        
+        case 'get_dashboard_chart_data':
+            requirePermission('view_dashboard');
+            $deviceId = getCurrentDeviceId();
+            $db = Database::getInstance()->getConnection();
+            $deviceFilter = $deviceId ? "device_id = $deviceId" : "1=1";
+            
+            // Last 7 days sales
+            $stmt = $db->query("
+                SELECT DATE(created_at) as date, COALESCE(SUM(total), 0) as total
+                FROM sales
+                WHERE $deviceFilter AND created_at >= DATE_SUB(CURDATE(), INTERVAL 6 DAY)
+                GROUP BY DATE(created_at)
+                ORDER BY date ASC
+            ");
+            $data = $stmt->fetchAll();
+            
+            // Fill missing dates
+            $dates = [];
+            $totals = [];
+            for ($i = 6; $i >= 0; $i--) {
+                $date = date('Y-m-d', strtotime("-$i days"));
+                $dates[] = date('D', strtotime($date));
+                $found = false;
+                foreach ($data as $row) {
+                    if ($row['date'] == $date) {
+                        $totals[] = (float)$row['total'];
+                        $found = true;
+                        break;
+                    }
+                }
+                if (!$found) $totals[] = 0;
+            }
+            
+            $response = ['success' => true, 'labels' => $dates, 'data' => $totals];
+            break;
+
+        case 'get_category_sales_chart':
+            requirePermission('view_reports');
+            $deviceId = getCurrentDeviceId();
+            $deviceFilter = $deviceId ? "s.device_id = $deviceId" : "1=1";
+            $db = Database::getInstance()->getConnection();
+            
+            $stmt = $db->query("
+                SELECT c.name as category, COALESCE(SUM(si.total), 0) as total
+                FROM sales s
+                LEFT JOIN sale_items si ON s.id = si.sale_id
+                LEFT JOIN products p ON si.product_id = p.id
+                LEFT JOIN categories c ON p.category_id = c.id
+                WHERE $deviceFilter
+                GROUP BY c.id
+                ORDER BY total DESC
+                LIMIT 10
+            ");
+            $data = $stmt->fetchAll();
+            
+            $labels = [];
+            $values = [];
+            $colors = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#64748b', '#ec4899', '#14b8a6'];
+            foreach ($data as $i => $row) {
+                $labels[] = $row['category'] ?? 'Uncategorized';
+                $values[] = (float)$row['total'];
+            }
+            
+            $response = ['success' => true, 'labels' => $labels, 'data' => $values, 'colors' => array_slice($colors, 0, count($labels))];
+            break;
+
+        case 'get_profit_trend_chart':
+            requirePermission('view_reports');
+            $deviceId = getCurrentDeviceId();
+            $deviceFilter = $deviceId ? "s.device_id = $deviceId" : "1=1";
+            $db = Database::getInstance()->getConnection();
+            
+            $stmt = $db->query("
+                SELECT 
+                    DATE(s.created_at) as date,
+                    COALESCE(SUM(si.total), 0) as revenue,
+                    COALESCE(SUM(si.quantity * p.cost), 0) as cost
+                FROM sales s
+                LEFT JOIN sale_items si ON s.id = si.sale_id
+                LEFT JOIN products p ON si.product_id = p.id
+                WHERE $deviceFilter AND s.created_at >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)
+                GROUP BY DATE(s.created_at)
+                ORDER BY date ASC
+            ");
+            $data = $stmt->fetchAll();
+            
+            $labels = [];
+            $revenue = [];
+            $cost = [];
+            foreach ($data as $row) {
+                $labels[] = date('M d', strtotime($row['date']));
+                $revenue[] = (float)$row['revenue'];
+                $cost[] = (float)$row['cost'];
+            }
+            
+            $response = ['success' => true, 'labels' => $labels, 'revenue' => $revenue, 'cost' => $cost];
             break;
 
         default:

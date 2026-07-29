@@ -134,6 +134,31 @@
                 </div>
             </div>
         </div>
+        <!-- ===== CHARTS SECTION ===== -->
+         <div class="col-md-6 mb-4">
+            <div class="row">
+                <div class="col-md-6 mb-4">
+                    <div class="card fade-in">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-chart-pie"></i> <?= __('sales_by_category') ?></h5>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="categoryChart" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-4">
+                    <div class="card fade-in">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="fas fa-chart-bar"></i> <?= __('profit_trend') ?></h5>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="profitChart" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -292,4 +317,105 @@ document.addEventListener('DOMContentLoaded', function() {
         padding: 0 !important;
     }
 }
+// ============================================
+// SALES BY CATEGORY (PIE CHART)
+// ============================================
+function loadCategoryChart() {
+    fetch('?ajax=1&action=get_category_sales_chart')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                const ctx = document.getElementById('categoryChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            data: data.data,
+                            backgroundColor: data.colors || ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#64748b', '#ec4899', '#14b8a6']
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    boxWidth: 12,
+                                    padding: 10,
+                                    font: { size: 10 }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        });
+}
+
+// ============================================
+// PROFIT TREND (LINE CHART)
+// ============================================
+function loadProfitChart() {
+    fetch('?ajax=1&action=get_profit_trend_chart')
+        .then(res => res.json())
+        .then(data => {
+            if (data.success && data.labels) {
+                const ctx = document.getElementById('profitChart').getContext('2d');
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            {
+                                label: '<?= __('revenue') ?>',
+                                data: data.revenue,
+                                borderColor: '#10b981',
+                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                tension: 0.3,
+                                fill: true
+                            },
+                            {
+                                label: '<?= __('cost') ?>',
+                                data: data.cost,
+                                borderColor: '#ef4444',
+                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                                tension: 0.3,
+                                fill: true
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'top',
+                                labels: {
+                                    boxWidth: 12,
+                                    padding: 10,
+                                    font: { size: 10 }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return '<?= getCurrencySymbol() ?>' + value;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        });
+}
+
+// Load charts on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadCategoryChart();
+    loadProfitChart();
+});
 </style>

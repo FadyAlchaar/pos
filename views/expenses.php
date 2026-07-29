@@ -233,7 +233,7 @@ function loadSummary(startDate, endDate) {
         .then(res => res.json())
         .then(data => {
             if (data.success) {
-                document.getElementById('totalExpenses').textContent = '$' + parseFloat(data.data.total || 0).toFixed(2);
+                document.getElementById('totalExpenses').textContent = formatPrice(data.data.total || 0);
                 if (data.data.by_category && data.data.by_category.length > 0) {
                     renderCategoryBreakdown(data.data.by_category);
                 } else {

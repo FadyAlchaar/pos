@@ -578,4 +578,10 @@ return [
     'discount' => 'الخصم',
     'tax' => 'الضريبة',
     'phone' => 'الهاتف',
+    'daily_sales_trend' => 'اتجاه المبيعات اليومية',
+    'daily_sales' => 'المبيعات اليومية',
+    'sales_by_category' => 'المبيعات حسب التصنيف',
+    'profit_trend' => 'اتجاه الأرباح',
+    'revenue' => 'الإيرادات',
+    'cost' => 'التكلفة',
 ];

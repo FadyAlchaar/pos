@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/pos/public/assets/css/style.css">
     
     <script src="/pos/public/assets/js/app.js"></script>
+    <script src="/pos/public/assets/js/chart.min.js"></script>
     <style>
         /* ALL STYLES ARE HERE - NO EXTERNAL FILE NEEDED */
         * { margin: 0; padding: 0; box-sizing: border-box; }

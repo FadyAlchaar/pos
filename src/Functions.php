@@ -802,7 +802,8 @@ function getAllExpenses($startDate = null, $endDate = null, $search = '') {
 
     $sql = "SELECT e.*, u.name as user_name 
             FROM expenses e 
-            LEFT JOIN users u ON e.user_id = u.id";
+            LEFT JOIN users u ON e.created_by = u.id"; // FIX: created_by not user_id
+
     if (!empty($conditions)) {
         $sql .= " WHERE " . implode(" AND ", $conditions);
     }
@@ -818,7 +819,7 @@ function getExpenseById($id) {
     $deviceId = getCurrentDeviceId();
     $stmt = $db->prepare("SELECT e.*, u.name as user_name 
                           FROM expenses e 
-                          LEFT JOIN users u ON e.user_id = u.id 
+                          LEFT JOIN users u ON e.created_by = u.id 
                           WHERE e.id = ? AND e.device_id = ?");
     $stmt->execute([$id, $deviceId]);
     return $stmt->fetch();
@@ -874,7 +875,7 @@ function getExpenseSummary($startDate = null, $endDate = null) {
 function createExpense($data) {
     $db = Database::getInstance()->getConnection();
     $deviceId = getCurrentDeviceId();
-    $stmt = $db->prepare("INSERT INTO expenses (device_id, category, amount, description, expense_date, user_id, payment_method) 
+    $stmt = $db->prepare("INSERT INTO expenses (device_id, category, amount, description, expense_date, created_by, payment_method) 
                           VALUES (?, ?, ?, ?, ?, ?, ?)");
     return $stmt->execute([
         $deviceId,
@@ -882,7 +883,7 @@ function createExpense($data) {
         $data['amount'],
         $data['description'] ?? null,
         $data['expense_date'],
-        $data['user_id'],
+        $data['user_id'] ?? 0, // This maps to created_by
         $data['payment_method'] ?? 'cash'
     ]);
 }

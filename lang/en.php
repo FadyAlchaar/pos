@@ -580,4 +580,10 @@ return [
     'discount' => 'Discount',
     'tax' => 'Tax',
     'phone' => 'Phone',
+    'daily_sales_trend' => 'Daily Sales Trend',
+    'daily_sales' => 'Daily Sales',
+    'sales_by_category' => 'Sales by Category',
+    'profit_trend' => 'Profit Trend',
+    'revenue' => 'Revenue',
+    'cost' => 'Cost',
 ];
