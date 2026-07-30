@@ -234,7 +234,7 @@ select.form-control { appearance: none; background-image: url("data:image/svg+xm
     
     .header .hamburger {
         display: none;
-        background: none;
+        background: block;
         border: none;
         font-size: 22px;
         cursor: pointer;

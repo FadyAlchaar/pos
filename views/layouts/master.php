@@ -523,7 +523,7 @@
             <!-- Header -->
             <header class="header">
                 <div class="header-left" style="display:flex;align-items:center;gap:10px;">
-                    <button class="hamburger" onclick="toggleSidebar()">
+                    <button class="hamburger">
                         <i class="fas fa-bars"></i>
                     </button>
                     <button id="sidebarToggleBtn" onclick="toggleSidebar()" title="Toggle Sidebar">

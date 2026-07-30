@@ -5,6 +5,31 @@ function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('open');
 }
 
+document.addEventListener('DOMContentLoaded', function() {
+    const hamburger = document.querySelector('.hamburger');
+    //console.log('1. Hamburger element found:', hamburger); // Check if found
+
+    if (hamburger) {
+        hamburger.addEventListener('click', function(e) {
+            e.preventDefault(); // Stops any weird link/page jump behavior
+            //console.log('2. Hamburger CLICKED!');
+
+            const sidebar = document.getElementById('sidebar');
+            //console.log('3. Sidebar element:', sidebar);
+
+            if (sidebar) {
+                sidebar.classList.toggle('open');
+                //console.log('4. Class "open" is now:', sidebar.classList.contains('open'));
+                //console.log('5. Sidebar classes:', sidebar.className);
+            } else {
+                //console.error('6. Sidebar NOT FOUND! Check ID.');
+            }
+        });
+    } else {
+        //console.error('Hamburger NOT FOUND! Check the class name ".hamburger".');
+    }
+});
+
 // Language switching
 function switchLanguage() {
     fetch('?route=switch-lang', {
