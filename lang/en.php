@@ -457,6 +457,7 @@ return [
     'cancel_order_confirm' => 'Cancel this purchase order?',
     'delete_order_confirm' => 'Delete this purchase order? This cannot be undone.',
     'print_receipt_question' => 'Do you want to print the receipt?',
+    'print_failed_opening_pdf' => 'Printing failed, opening the PDF instead.',
     'print_success' => 'Receipt printed successfully!',
     'print_failed' => 'Failed to print receipt.',
     'print_error' => 'Print error',

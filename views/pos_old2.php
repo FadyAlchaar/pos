@@ -566,26 +566,7 @@ function printReceiptFromServer(saleId, method = 'normal') {
     })
     .then(res => res.json())
     .then(data => {
-        if (!data.success) {
-            alert('❌ ' + (data.message || 'PDF generation failed.'));
-            return;
-        }
-
-        // Physical printing was attempted via the TextPrinter.exe bridge.
-        if (data.printed === true) {
-            // Printed successfully — no need to also pop up the PDF viewer.
-            return;
-        }
-        if (data.printed === false) {
-            // Bridge is configured but the print failed — show the real
-            // error (wrong printer name, printer offline, etc.) rather than
-            // failing silently, then fall through to the PDF fallback below.
-            alert('⚠️ ' + '<?= __('print_failed_opening_pdf') ?>' + '\n\n' + (data.print_message || 'Unknown printer error.'));
-        }
-        // data.printed === null means no bridge is configured at all —
-        // same PDF-popup behavior as before, unchanged.
-
-        if (data.pdf_base64) {
+        if (data.success && data.pdf_base64) {
             // Try to open in new window
             const win = window.open('', '_blank');
             
@@ -631,6 +612,8 @@ function printReceiptFromServer(saleId, method = 'normal') {
                 </html>
             `);
             win.document.close();
+        } else {
+            alert('❌ ' + (data.message || 'PDF generation failed.'));
         }
     })
     .catch(err => {

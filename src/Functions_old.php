@@ -665,81 +665,19 @@ function getReceiptTemplate($templateId = null) {
 // PRINTING FUNCTIONS
 // ============================================
 function printReceipt($saleId, $method = 'normal') {
-    // Always generate the PDF too — used as the manual fallback / "view receipt"
-    // path regardless of whether physical bridge printing succeeds.
+    // Generate PDF only — no printing logic
     $result = generateReceiptPDF($saleId, 'normal');
     if (!$result['success']) {
         return ['success' => false, 'message' => $result['message']];
     }
-
-    $response = [
+    
+    // Return the file path so the frontend can open it
+    return [
         'success' => true,
         'file' => '/pos/receipts/' . basename($result['file']),
-        'pdf_base64' => base64_encode(file_get_contents($result['file'])),
-        'printed' => null,        // null = no bridge configured, so nothing was attempted
-        'print_message' => null,
+        'pdf_base64' => base64_encode(file_get_contents($result['file']))
     ];
-
-    $settings = getSettings();
-    $printerMethod = $settings['printer_method'] ?? 'windows';
-    $bridgePath = $settings['printer_bridge_path'] ?? '';
-    $printerName = $settings['printer_name'] ?? '';
-
-    if ($printerMethod === 'windows' && $bridgePath !== '' && $printerName !== '') {
-        $bridgeResult = printViaTextPrinterBridge($saleId, $bridgePath, $printerName);
-        $response['printed'] = $bridgeResult['success'];
-        $response['print_message'] = $bridgeResult['message'];
-    }
-
-    return $response;
 }
-
-// ============================================
-// PHYSICAL PRINTING via the TextPrinter.exe Windows-driver bridge
-// (needed for correct Arabic rendering — see TextPrinter's PrintToPrinter,
-// which uses GDI+/Graphics.DrawString through a real Windows printer driver
-// instead of raw ESC/POS text, which cannot shape Arabic correctly).
-// ============================================
-function printViaTextPrinterBridge($saleId, $bridgePath, $printerName) {
-    if (!file_exists($bridgePath)) {
-        return ['success' => false, 'message' => "Bridge executable not found at: $bridgePath"];
-    }
-
-    $sale = getSaleById($saleId);
-    if (!$sale) {
-        return ['success' => false, 'message' => 'Sale not found for printing.'];
-    }
-
-    $text = buildTextReceipt($sale);
-
-    // Write to a temp file rather than passing text as a CLI argument —
-    // multi-line Arabic content is not safe to pass reliably through
-    // shell argument escaping, and TextPrinter.exe already accepts a
-    // file path (it does File.Exists() itself, reading as UTF-8).
-    $receiptDir = __DIR__ . '/../receipts';
-    if (!is_dir($receiptDir)) {
-        mkdir($receiptDir, 0777, true);
-    }
-    $tempFile = $receiptDir . '/print_job_' . $saleId . '_' . uniqid() . '.txt';
-    file_put_contents($tempFile, $text, LOCK_EX);
-
-    $cmd = escapeshellarg($bridgePath) . ' ' . escapeshellarg($printerName) . ' ' . escapeshellarg($tempFile);
-    exec($cmd . ' 2>&1', $outputLines, $exitCode);
-
-    // Best-effort cleanup — don't let a failed delete affect the print result.
-    @unlink($tempFile);
-
-    if ($exitCode === 0) {
-        return ['success' => true, 'message' => 'Printed successfully.'];
-    }
-
-    // TextPrinter.exe writes "Print error: {message}" to stderr on failure,
-    // which exec() captured above (2>&1) — surface it directly so a wrong
-    // printer name / offline printer / etc. is visible instead of silent.
-    $errorDetail = trim(implode("\n", $outputLines));
-    return ['success' => false, 'message' => $errorDetail !== '' ? $errorDetail : "Bridge exited with code $exitCode."];
-}
-
 
 // ============================================
 // CUSTOMER FUNCTIONS (with device filter)
@@ -1940,7 +1878,7 @@ function buildTextReceipt($sale) {
     $receipt .= "Invoice: " . $sale['invoice_no'] . "\n";
     $receipt .= "Date: " . date('Y-m-d H:i:s', strtotime($sale['created_at'])) . "\n";
     $receipt .= "Cashier: " . ($sale['cashier'] ?? 'N/A') . "\n";
-    $receipt .= "Customer: " . ($sale['customer_display_name'] ?? $sale['customer_name'] ?? 'Walk-in') . "\n";
+    $receipt .= "Customer: " . ($sale['customer_name'] ?? 'Walk-in') . "\n";
     $receipt .= "------------------------\n";
     $receipt .= "ITEM          QTY   PRICE   TOTAL\n";
     $receipt .= "------------------------\n";
