@@ -35,11 +35,8 @@ $autoPrint = getSetting('auto_print') ?? '1'; // Default: enabled
                                 oninput="toggleClearButton(this)">
                             <button type="button" class="clear-btn" onclick="clearInput(this)">✕</button>
                         </div>
-                        <button class="btn btn-primary" onclick="manualScan()" title="<?= __('search') ?>">
+                        <button class="btn btn-primary" onclick="manualScan()">
                             <i class="fas fa-search"></i>
-                        </button>
-                        <button class="btn btn-outline" id="cameraScanBtn" onclick="requestCameraScan()" title="<?= __('scan_with_camera') ?>" style="display:none; padding: 0 12px;">
-                            <i class="fas fa-camera"></i>
                         </button>
                     </div>
                 </div>
@@ -286,36 +283,6 @@ function manualScan() {
 }
 
 // ============================================
-// CAMERA SCAN (via the native WebViewShellScan bridge)
-// Only shown when running inside the shell app — on a plain desktop/mobile
-// browser there's no window.Android bridge, so the button stays hidden
-// rather than offering a scan option that can't actually work there.
-// ============================================
-function hasNativeScanner() {
-    return (typeof Android !== 'undefined') && (typeof Android.startScan === 'function');
-}
-
-function requestCameraScan() {
-    if (hasNativeScanner()) {
-        Android.startScan();
-    }
-}
-
-// Called by the shell app (MainActivity.deliverScannedCode) after a
-// successful native scan. Feeds straight into the same path as typing
-// a barcode or using a hardware scanner.
-window.onBarcodeScanned = function(code) {
-    if (!code) return;
-    if (navigator.vibrate) navigator.vibrate(50);
-    processBarcode(code);
-};
-
-document.addEventListener('DOMContentLoaded', function() {
-    if (hasNativeScanner()) {
-        document.getElementById('cameraScanBtn').style.display = 'inline-flex';
-    }
-});
-
 // ADD TO CART
 // ============================================
 function addToCart(id, name, price, stock) {
