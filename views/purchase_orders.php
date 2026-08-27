@@ -40,7 +40,7 @@ $products = getAllProducts('', 100, 0);
 </div>
 
 <?php if ($canManage): ?>
-<!-- ===== MODAL: Create Purchase Order ===== -->
+<!-- ===== MODAL: Create / Edit Purchase Order ===== -->
 <div class="modal-overlay" id="poModal">
     <div class="modal-content" style="max-width: 750px;">
         <div class="d-flex justify-content-between align-items-center mb-4">
@@ -109,7 +109,7 @@ $products = getAllProducts('', 100, 0);
 
             <div class="d-flex gap-2 mt-3">
                 <button type="submit" class="btn btn-primary" style="flex: 1;">
-                    <i class="fas fa-save"></i> <?= __('create_purchase_order') ?>
+                    <i class="fas fa-save"></i> <span id="poSubmitLabel"><?= __('create_purchase_order') ?></span>
                 </button>
                 <button type="button" class="btn btn-outline" onclick="closePOModal()"><?= __('cancel') ?></button>
             </div>
@@ -182,6 +182,7 @@ $products = getAllProducts('', 100, 0);
             <p class="text-muted text-center">Loading...</p>
         </div>
         <div class="d-flex gap-2 mt-3" id="poViewActions">
+            <button class="btn btn-warning" id="poEditButton" onclick="editPO(currentPOId)"><i class="fas fa-edit"></i> Edit</button>
             <button class="btn btn-success" onclick="receivePO()"><i class="fas fa-check"></i> <?= __('receive_order') ?></button>
             <button class="btn btn-warning" onclick="cancelPO()"><i class="fas fa-times"></i> <?= __('cancel_order') ?></button>
             <button class="btn btn-danger" onclick="deletePO()"><i class="fas fa-trash"></i> <?= __('delete_order') ?></button>
@@ -346,6 +347,7 @@ function renderPOTable(orders) {
                 <td>${statusBadge}</td>
                 <td style="text-align: right;">
                     <button class="btn btn-sm btn-info" onclick="viewPO(${o.id})"><i class="fas fa-eye"></i></button>
+                    ${o.status === 'pending' ? `<button class="btn btn-sm btn-warning" onclick="editPO(${o.id})" title="Edit"><i class="fas fa-edit"></i></button>` : ''}
                 </td>
             </tr>
         `;
@@ -378,10 +380,12 @@ function renderPOView(order) {
     const canReceive = order.status === 'pending';
     const canCancel = order.status === 'pending';
     const canDelete = order.status === 'pending';
+    const canEdit = order.status === 'pending';
     
     actions.querySelector('.btn-success').style.display = canReceive ? 'inline-flex' : 'none';
     actions.querySelector('.btn-warning').style.display = canCancel ? 'inline-flex' : 'none';
     actions.querySelector('.btn-danger').style.display = canDelete ? 'inline-flex' : 'none';
+    document.getElementById('poEditButton').style.display = canEdit ? 'inline-flex' : 'none';
     
     let itemsHtml = '';
     order.items.forEach(item => {
@@ -513,10 +517,89 @@ function deletePO() {
 }
 
 // ============================================
+// EDIT PURCHASE ORDER
+// ============================================
+function editPO(id) {
+    if (!id) return;
+
+    fetch(`?ajax=1&action=get_purchase_order&id=${id}`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.success) {
+                alert('Error: ' + (data.message || 'Failed to load purchase order.'));
+                return;
+            }
+
+            const order = data.data;
+
+            if (order.status !== 'pending') {
+                alert('Only pending purchase orders can be edited.');
+                return;
+            }
+
+            currentPOId = order.id;
+
+            document.getElementById('poModalTitle').textContent = 'Edit Purchase Order — ' + order.po_no;
+            document.getElementById('poSubmitLabel').textContent = 'Save Changes';
+            document.getElementById('po_supplier').value = order.supplier_id;
+            document.getElementById('po_date').value = order.order_date;
+            document.getElementById('po_delivery').value = order.expected_delivery || '';
+            document.getElementById('po_notes').value = order.notes || '';
+
+            const container = document.getElementById('poProductsContainer');
+            container.innerHTML = '';
+
+            if (order.items && order.items.length) {
+                order.items.forEach(item => {
+                    const row = createPOProductRow();
+                    row.querySelector('.po-product-search').value = item.product_name || '';
+                    row.querySelector('.po-product-id').value = item.product_id;
+                    row.querySelector('.po-qty').value = item.quantity;
+                    row.querySelector('.po-price').value = parseFloat(item.unit_price || 0).toFixed(2);
+                    container.appendChild(row);
+                });
+            } else {
+                container.appendChild(createPOProductRow());
+            }
+
+            // Close the view modal first, then open the edit modal.
+            closePOViewModal();
+            currentPOId = order.id;
+            document.getElementById('poModal').classList.add('show');
+        })
+        .catch(err => alert('Network error: ' + err));
+}
+
+function createPOProductRow() {
+    const row = document.createElement('div');
+    row.className = 'po-product-row d-flex gap-2 mb-2 align-items-center';
+    row.innerHTML = `
+        <div style="flex:1; position:relative;">
+            <input type="text" class="form-control po-product-search" placeholder="<?= __('search_or_add_product') ?>"
+                   onkeyup="searchPOPRODUCT(this)"
+                   onkeydown="handleProductSearchEnter(event, this)"
+                   autocomplete="off">
+            <input type="hidden" class="po-product-id" value="">
+            <div class="po-product-results" style="position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid #ddd;border-radius:4px;max-height:200px;overflow-y:auto;display:none;z-index:1000;"></div>
+        </div>
+        <button type="button" class="btn btn-sm btn-primary" onclick="openNewProductModal(this)" title="<?= __('add_new_product') ?>">
+            <i class="fas fa-plus-circle"></i>
+        </button>
+        <input type="number" class="form-control po-qty" placeholder="<?= __('quantity') ?>" style="width:100px;" min="1" value="1">
+        <input type="number" step="0.01" class="form-control po-price" placeholder="<?= __('unit_price') ?>" style="width:120px;" min="0" value="0.00">
+        <button type="button" class="btn btn-sm btn-success" onclick="addPOProductRow()"><i class="fas fa-plus"></i></button>
+        <button type="button" class="btn btn-sm btn-danger" onclick="removePOProductRow(this)"><i class="fas fa-times"></i></button>
+    `;
+    return row;
+}
+
+// ============================================
 // CREATE PURCHASE ORDER
 // ============================================
 function openPurchaseOrderModal() {
+    currentPOId = null;
     document.getElementById('poModalTitle').textContent = '<?= __('new_purchase_order') ?>';
+    document.getElementById('poSubmitLabel').textContent = '<?= __('create_purchase_order') ?>';
     document.getElementById('poForm').reset();
     document.getElementById('po_date').value = new Date().toISOString().split('T')[0];
     // Reset product rows
@@ -544,6 +627,7 @@ function openPurchaseOrderModal() {
 
 function closePOModal() {
     document.getElementById('poModal').classList.remove('show');
+    currentPOId = null;
     // Also close any nested new product modal if open
     closeNewProductModal();
 }
@@ -585,6 +669,7 @@ function submitPO(e) {
     }
     
     const data = {
+        id: currentPOId,
         supplier_id: parseInt(supplierId),
         order_date: orderDate,
         expected_delivery: expectedDelivery || null,
@@ -597,7 +682,7 @@ function submitPO(e) {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <?= __('processing') ?>...';
     btn.disabled = true;
     
-    fetch('?ajax=1&action=create_purchase_order', {
+    fetch(currentPOId ? '?ajax=1&action=update_purchase_order' : '?ajax=1&action=create_purchase_order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
         body: JSON.stringify(data)
@@ -605,7 +690,8 @@ function submitPO(e) {
     .then(res => res.json())
     .then(result => {
         if (result.success) {
-            alert('✅ <?= __('purchase_order_created') ?> ' + result.po_no);
+            alert('✅ ' + (currentPOId ? 'Purchase order updated successfully!' : '<?= __('purchase_order_created') ?> ' + result.po_no));
+            currentPOId = null;
             closePOModal();
             loadPurchaseOrders();
         } else {
@@ -614,7 +700,7 @@ function submitPO(e) {
     })
     .catch(err => alert('<?= __('network_error') ?>'))
     .finally(() => {
-        btn.innerHTML = '<i class="fas fa-save"></i> <?= __('create_purchase_order') ?>';
+        btn.innerHTML = '<i class="fas fa-save"></i> <span id="poSubmitLabel">' + (currentPOId ? 'Save Changes' : '<?= __('create_purchase_order') ?>') + '</span>';
         btn.disabled = false;
     });
 }

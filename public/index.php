@@ -1248,7 +1248,19 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             $result = createPurchaseOrder($data);
             $response = $result;
             break;
+        
+        case 'update_purchase_order':
+            requirePermission('manage_inventory');
+            $raw = file_get_contents('php://input');
+            $data = json_decode($raw, true);
+            if (!$data || empty($data['id']) || empty($data['supplier_id']) || empty($data['order_date']) || empty($data['items'])) {
+                $response = ['success' => false, 'message' => 'Invalid purchase order data.'];
+                break;
+            }
+            $response = updatePurchaseOrder($data);
+            break;
 
+        
         case 'receive_purchase_order':
             requirePermission('manage_inventory');
             $id = $_POST['id'] ?? 0;
@@ -1613,6 +1625,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             
             $response = ['success' => true, 'labels' => $labels, 'revenue' => $revenue, 'cost' => $cost];
             break;
+        
+        // ---------- STOCK MOVEMENT REPORT ----------
+        case 'get_stock_movement':
+            requirePermission('view_inventory');
+
+            $productId = (int)($_GET['product_id'] ?? 0);
+            $fromDate = $_GET['from_date'] ?? date('Y-m-01');
+            $toDate = $_GET['to_date'] ?? date('Y-m-d');
+
+            $response = getStockMovementReport($productId, $fromDate, $toDate);
+            break;
 
         default:
             $response = ['success' => false, 'message' => 'Unknown API action'];
@@ -1877,6 +1900,14 @@ switch ($route) {
         $page_title = __('receipt_designer');
         $active = 'receipt_designer';
         require __DIR__ . '/../views/receipt_designer.php';
+        break;
+    
+    case 'stock_movement':
+        requirePermission('view_inventory');
+        $title = t('Stock Movement', 'حركة المخزون');
+        $page_title = t('Stock Movement', 'حركة المخزون');
+        $active = 'stock_movement';
+        require __DIR__ . '/../views/stock_movement.php';
         break;
 
     default:

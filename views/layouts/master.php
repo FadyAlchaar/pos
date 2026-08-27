@@ -446,6 +446,9 @@
                         <a href="?route=cash_report" class="<?= $active === 'cash_report' ? 'active' : '' ?>">
                             <i class="fas fa-money-bill-wave"></i> <?= __('cash_report') ?>
                         </a>
+                        <a href="?route=stock_movement" class="<?= $active === 'stock_movement' ? 'active' : '' ?>">
+                            <i class="fas fa-exchange-alt"></i> <?= t('Stock Movement', 'حركة المخزون') ?>
+                        </a>
                         <?php endif; ?>
                     </div>
                 </div>

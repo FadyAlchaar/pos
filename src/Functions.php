@@ -1395,6 +1395,116 @@ function createPurchaseOrder($data) {
     }
 }
 
+// ============================================
+// UPDATE PURCHASE ORDER
+// Only pending orders belonging to the current device can be edited.
+// Receiving/cancelling/deleting keeps the existing behavior unchanged.
+// ============================================
+function updatePurchaseOrder($data) {
+    $db = Database::getInstance()->getConnection();
+    $id = (int)($data['id'] ?? 0);
+    $supplierId = (int)($data['supplier_id'] ?? 0);
+    $orderDate = trim($data['order_date'] ?? '');
+    $expectedDelivery = !empty($data['expected_delivery']) ? $data['expected_delivery'] : null;
+    $notes = $data['notes'] ?? null;
+    $items = $data['items'] ?? [];
+    $deviceId = getCurrentDeviceId();
+
+    if ($id <= 0 || $supplierId <= 0 || !$orderDate || !is_array($items) || count($items) === 0) {
+        return ['success' => false, 'message' => 'Invalid purchase order data.'];
+    }
+
+    foreach ($items as $item) {
+        $productId = (int)($item['product_id'] ?? 0);
+        $quantity = (int)($item['quantity'] ?? 0);
+        $unitPrice = (float)($item['unit_price'] ?? -1);
+
+        if ($productId <= 0 || $quantity <= 0 || $unitPrice < 0) {
+            return ['success' => false, 'message' => 'Invalid product, quantity or unit price.'];
+        }
+    }
+
+    try {
+        $db->beginTransaction();
+
+        // Lock the PO and make absolutely sure it is still editable.
+        $stmt = $db->prepare("SELECT * FROM purchase_orders WHERE id = ? AND device_id = ? FOR UPDATE");
+        $stmt->execute([$id, $deviceId]);
+        $po = $stmt->fetch();
+
+        if (!$po) {
+            $db->rollBack();
+            return ['success' => false, 'message' => 'Purchase order not found.'];
+        }
+
+        if ($po['status'] !== 'pending') {
+            $db->rollBack();
+            return ['success' => false, 'message' => 'Only pending purchase orders can be edited.'];
+        }
+
+        // Validate supplier belongs to an existing supplier record.
+        $stmt = $db->prepare("SELECT id FROM suppliers WHERE id = ? LIMIT 1");
+        $stmt->execute([$supplierId]);
+        if (!$stmt->fetch()) {
+            $db->rollBack();
+            return ['success' => false, 'message' => 'Supplier not found.'];
+        }
+
+        // Validate all products before changing anything.
+        $productCheck = $db->prepare("SELECT id FROM products WHERE id = ? AND device_id = ? LIMIT 1");
+        foreach ($items as $item) {
+            $productId = (int)$item['product_id'];
+            $productCheck->execute([$productId, $deviceId]);
+            if (!$productCheck->fetch()) {
+                $db->rollBack();
+                return ['success' => false, 'message' => 'One or more selected products were not found on this device.'];
+            }
+        }
+
+        // Update PO header. PO number and creator remain unchanged.
+        $stmt = $db->prepare("UPDATE purchase_orders
+                              SET supplier_id = ?, order_date = ?, expected_delivery = ?, notes = ?, total_amount = 0
+                              WHERE id = ? AND device_id = ? AND status = 'pending'");
+        $stmt->execute([$supplierId, $orderDate, $expectedDelivery, $notes, $id, $deviceId]);
+
+        // Replace the pending PO's item list atomically.
+        $stmt = $db->prepare("DELETE FROM purchase_order_items WHERE po_id = ?");
+        $stmt->execute([$id]);
+
+        $insert = $db->prepare("INSERT INTO purchase_order_items
+                                (po_id, product_id, quantity, unit_price, total, received_quantity)
+                                VALUES (?, ?, ?, ?, ?, 0)");
+
+        $total = 0;
+        foreach ($items as $item) {
+            $productId = (int)$item['product_id'];
+            $quantity = (int)$item['quantity'];
+            $unitPrice = round((float)$item['unit_price'], 2);
+            $lineTotal = round($quantity * $unitPrice, 2);
+            $total += $lineTotal;
+            $insert->execute([$id, $productId, $quantity, $unitPrice, $lineTotal]);
+        }
+
+        $stmt = $db->prepare("UPDATE purchase_orders SET total_amount = ? WHERE id = ? AND device_id = ?");
+        $stmt->execute([round($total, 2), $id, $deviceId]);
+
+        $db->commit();
+        return [
+            'success' => true,
+            'message' => 'Purchase order updated successfully.',
+            'po_id' => $id,
+            'po_no' => $po['po_no'],
+            'total_amount' => round($total, 2)
+        ];
+    } catch (Exception $e) {
+        if ($db->inTransaction()) {
+            $db->rollBack();
+        }
+        return ['success' => false, 'message' => $e->getMessage()];
+    }
+}
+
+
 function getPurchaseOrders($limit = 50) {
     $db = Database::getInstance()->getConnection();
     $deviceId = getCurrentDeviceId();
@@ -1754,4 +1864,284 @@ function buildTextReceipt($sale) {
     $receipt .= "    " . $footer . "\n";
     $receipt .= "========================\n";
     return $receipt;
+}
+function getStockMovementReport($productId, $fromDate, $toDate) {
+    $db = Database::getInstance()->getConnection();
+    $deviceId = getCurrentDeviceId();
+
+    $productId = (int)$productId;
+    if ($productId <= 0) {
+        return ['success' => false, 'message' => 'Invalid product.'];
+    }
+
+    $fromDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromDate) ? $fromDate : date('Y-m-01');
+    $toDate   = preg_match('/^\d{4}-\d{2}-\d{2}$/', $toDate) ? $toDate : date('Y-m-d');
+
+    if ($fromDate > $toDate) {
+        return ['success' => false, 'message' => 'From date cannot be after To date.'];
+    }
+
+    // Current product on the currently selected device.
+    $stmt = $db->prepare("
+        SELECT id, device_id, name, barcode, barcode2, barcode3,
+               alameen_code, alameen_number, coded_code, stock, unit1
+        FROM products
+        WHERE id = ? AND device_id = ?
+        LIMIT 1
+    ");
+    $stmt->execute([$productId, $deviceId]);
+    $product = $stmt->fetch();
+
+    if (!$product) {
+        return ['success' => false, 'message' => 'Product not found.'];
+    }
+
+    /*
+     * All known stock movements are normalized to:
+     * movement_date, movement_type, reference_no, reference_id,
+     * qty_in, qty_out, user_name, notes
+     *
+     * Purchase date uses purchase_orders.created_at because the current
+     * schema has no separate "received_at" field.
+     *
+     * Transfer IN is special: createTransfer() can create a new product
+     * row on the destination device. We therefore match the destination
+     * product to the source product by barcode/alameen/coded code/name.
+     */
+    $eventsSql = "
+        SELECT
+            s.created_at AS movement_date,
+            'sale' AS movement_type,
+            s.invoice_no AS reference_no,
+            s.id AS reference_id,
+            0 AS qty_in,
+            si.quantity AS qty_out,
+            u.name AS user_name,
+            CONCAT('Sale ', s.invoice_no) AS notes
+        FROM sale_items si
+        INNER JOIN sales s ON s.id = si.sale_id
+        LEFT JOIN users u ON u.id = s.user_id
+        WHERE si.product_id = ?
+          AND s.device_id = ?
+          AND s.created_at >= ? AND s.created_at < DATE_ADD(?, INTERVAL 1 DAY)
+
+        UNION ALL
+
+        SELECT
+            po.created_at AS movement_date,
+            'purchase' AS movement_type,
+            po.po_no AS reference_no,
+            po.id AS reference_id,
+            poi.quantity AS qty_in,
+            0 AS qty_out,
+            u.name AS user_name,
+            CONCAT('Purchase Order ', po.po_no) AS notes
+        FROM purchase_order_items poi
+        INNER JOIN purchase_orders po ON po.id = poi.po_id
+        LEFT JOIN users u ON u.id = po.user_id
+        WHERE poi.product_id = ?
+          AND po.device_id = ?
+          AND po.status = 'received'
+          AND po.created_at >= ? AND po.created_at < DATE_ADD(?, INTERVAL 1 DAY)
+
+        UNION ALL
+
+        SELECT
+            r.return_date AS movement_date,
+            'return' AS movement_type,
+            r.return_no AS reference_no,
+            r.id AS reference_id,
+            ri.quantity AS qty_in,
+            0 AS qty_out,
+            u.name AS user_name,
+            CONCAT('Return ', r.return_no) AS notes
+        FROM return_items ri
+        INNER JOIN returns r ON r.id = ri.return_id
+        LEFT JOIN users u ON u.id = r.user_id
+        WHERE ri.product_id = ?
+          AND r.device_id = ?
+          AND r.return_date >= ? AND r.return_date < DATE_ADD(?, INTERVAL 1 DAY)
+
+        UNION ALL
+
+        SELECT
+            t.transfer_date AS movement_date,
+            'transfer_out' AS movement_type,
+            t.transfer_no AS reference_no,
+            t.id AS reference_id,
+            0 AS qty_in,
+            ti.quantity AS qty_out,
+            u.name AS user_name,
+            CONCAT('Transfer to ', d.device_name) AS notes
+        FROM transfer_items ti
+        INNER JOIN transfers t ON t.id = ti.transfer_id
+        LEFT JOIN users u ON u.id = t.user_id
+        LEFT JOIN devices d ON d.id = t.to_device_id
+        WHERE ti.product_id = ?
+          AND t.from_device_id = ?
+          AND t.status = 'completed'
+          AND t.transfer_date >= ? AND t.transfer_date < DATE_ADD(?, INTERVAL 1 DAY)
+
+        UNION ALL
+
+        SELECT
+            t.transfer_date AS movement_date,
+            'transfer_in' AS movement_type,
+            t.transfer_no AS reference_no,
+            t.id AS reference_id,
+            ti.quantity AS qty_in,
+            0 AS qty_out,
+            u.name AS user_name,
+            CONCAT('Transfer from ', d.device_name) AS notes
+        FROM transfer_items ti
+        INNER JOIN transfers t ON t.id = ti.transfer_id
+        INNER JOIN products sp ON sp.id = ti.product_id
+        LEFT JOIN users u ON u.id = t.user_id
+        LEFT JOIN devices d ON d.id = t.from_device_id
+        WHERE t.to_device_id = ?
+          AND t.status = 'completed'
+          AND t.transfer_date >= ? AND t.transfer_date < DATE_ADD(?, INTERVAL 1 DAY)
+          AND (
+                (NULLIF(?, '') IS NOT NULL AND sp.barcode = ?)
+             OR (NULLIF(?, '') IS NOT NULL AND sp.barcode2 = ?)
+             OR (NULLIF(?, '') IS NOT NULL AND sp.barcode3 = ?)
+             OR (NULLIF(?, '') IS NOT NULL AND sp.alameen_code = ?)
+             OR (NULLIF(?, '') IS NOT NULL AND sp.alameen_number = ?)
+             OR (NULLIF(?, '') IS NOT NULL AND sp.coded_code = ?)
+             OR (
+                    COALESCE(?, '') <> ''
+                    AND sp.name = ?
+                )
+          )
+        ORDER BY movement_date ASC, reference_id ASC
+    ";
+
+    $params = [
+        // sales
+        $productId, $deviceId, $fromDate, $toDate,
+
+        // purchases
+        $productId, $deviceId, $fromDate, $toDate,
+
+        // returns
+        $productId, $deviceId, $fromDate, $toDate,
+
+        // transfer out
+        $productId, $deviceId, $fromDate, $toDate,
+
+        // transfer in
+        $deviceId, $fromDate, $toDate,
+        $product['barcode'], $product['barcode'],
+        $product['barcode2'], $product['barcode2'],
+        $product['barcode3'], $product['barcode3'],
+        $product['alameen_code'], $product['alameen_code'],
+        $product['alameen_number'], $product['alameen_number'],
+        $product['coded_code'], $product['coded_code'],
+        $product['name'], $product['name']
+    ];
+
+    $stmt = $db->prepare($eventsSql);
+    $stmt->execute($params);
+    $events = $stmt->fetchAll();
+
+    /*
+     * Reconciliation:
+     * We know today's/current stock. Calculate the balance immediately
+     * after the requested end date by reversing all known movements after
+     * the requested period. Then calculate the opening balance by reversing
+     * movements inside the requested period.
+     *
+     * This makes the report useful even though old manual adjustments and
+     * direct stock edits were not historically logged.
+     */
+    $netAfterEndSql = "
+        SELECT COALESCE(SUM(q.net_qty), 0) AS net_qty
+        FROM (
+            SELECT -SUM(si.quantity) AS net_qty
+            FROM sale_items si
+            INNER JOIN sales s ON s.id = si.sale_id
+            WHERE si.product_id = ? AND s.device_id = ?
+              AND s.created_at >= DATE_ADD(?, INTERVAL 1 DAY)
+
+            UNION ALL
+
+            SELECT SUM(poi.quantity) AS net_qty
+            FROM purchase_order_items poi
+            INNER JOIN purchase_orders po ON po.id = poi.po_id
+            WHERE poi.product_id = ? AND po.device_id = ?
+              AND po.status = 'received'
+              AND po.created_at >= DATE_ADD(?, INTERVAL 1 DAY)
+
+            UNION ALL
+
+            SELECT SUM(ri.quantity) AS net_qty
+            FROM return_items ri
+            INNER JOIN returns r ON r.id = ri.return_id
+            WHERE ri.product_id = ? AND r.device_id = ?
+              AND r.return_date >= DATE_ADD(?, INTERVAL 1 DAY)
+
+            UNION ALL
+
+            SELECT -SUM(ti.quantity) AS net_qty
+            FROM transfer_items ti
+            INNER JOIN transfers t ON t.id = ti.transfer_id
+            WHERE ti.product_id = ? AND t.from_device_id = ?
+              AND t.status = 'completed'
+              AND t.transfer_date >= DATE_ADD(?, INTERVAL 1 DAY)
+        ) q
+    ";
+
+    // Transfer-in after the period is intentionally excluded from the
+    // reconciliation because destination product IDs may have been cloned.
+    // It is safer to avoid inventing a historical link here.
+    $stmt = $db->prepare($netAfterEndSql);
+    $stmt->execute([
+        $productId, $deviceId, $toDate,
+        $productId, $deviceId, $toDate,
+        $productId, $deviceId, $toDate,
+        $productId, $deviceId, $toDate
+    ]);
+    $netAfterEnd = (int)($stmt->fetch()['net_qty'] ?? 0);
+
+    $currentStock = (int)$product['stock'];
+    $closingBalance = $currentStock - $netAfterEnd;
+
+    $periodNet = 0;
+    foreach ($events as $event) {
+        $periodNet += (int)$event['qty_in'] - (int)$event['qty_out'];
+    }
+
+    $openingBalance = $closingBalance - $periodNet;
+
+    $balance = $openingBalance;
+    $totalIn = 0;
+    $totalOut = 0;
+
+    foreach ($events as &$event) {
+        $in = (int)$event['qty_in'];
+        $out = (int)$event['qty_out'];
+        $balance += $in - $out;
+
+        $event['qty_in'] = $in;
+        $event['qty_out'] = $out;
+        $event['balance'] = $balance;
+
+        $totalIn += $in;
+        $totalOut += $out;
+    }
+    unset($event);
+
+    return [
+        'success' => true,
+        'product' => $product,
+        'from_date' => $fromDate,
+        'to_date' => $toDate,
+        'opening_balance' => $openingBalance,
+        'total_in' => $totalIn,
+        'total_out' => $totalOut,
+        'closing_balance' => $closingBalance,
+        'current_stock' => $currentStock,
+        'events' => $events,
+        'reconciles_with_current_stock' => ($closingBalance === $currentStock)
+    ];
 }
