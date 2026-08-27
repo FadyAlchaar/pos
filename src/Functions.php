@@ -1766,20 +1766,61 @@ function generateReceiptPDF($saleId, $method = 'normal') {
         return ['success' => false, 'message' => 'Sale not found'];
     }
     
-    $settings = getSettings();
-    $storeName = $settings['store_name'] ?? 'POS System';
-    $storeAddress = $settings['store_address'] ?? '';
-    $storePhone = $settings['store_phone'] ?? '';
+    $storeSettings = getSettings();
+    $storeName = $storeSettings['store_name'] ?? 'POS System';
+    $storeAddress = $storeSettings['store_address'] ?? '';
+    $storePhone = $storeSettings['store_phone'] ?? '';
     $currency = getCurrencySymbol();
-    $footerText = $settings['receipt_footer'] ?? 'Thank you for your business!';
     $isRtl = getCurrentLanguage() === 'ar';
-    
+
+    // Pull the actual configured receipt template (previously ignored entirely
+    // — generateReceiptPDF used to hardcode every field on, regardless of
+    // what was saved in the receipt designer).
+    $templateRow = getReceiptTemplate();
+    $templateSettings = [];
+    if (!empty($templateRow['settings'])) {
+        $decoded = is_array($templateRow['settings']) ? $templateRow['settings'] : json_decode($templateRow['settings'], true);
+        if (is_array($decoded)) {
+            $templateSettings = $decoded;
+        }
+    }
+    $fieldEnabled = function ($key) use ($templateSettings) {
+        return $templateSettings[$key]['enabled'] ?? true;
+    };
+    $settings = [
+        'direction'      => $templateSettings['direction'] ?? ($isRtl ? 'rtl' : 'ltr'),
+        'font_size'      => intval($templateSettings['font_size'] ?? 12),
+        'font_weight'    => $templateSettings['font_weight'] ?? 'normal',
+        'footer_text'    => $templateSettings['footer_text'] ?? ($storeSettings['receipt_footer'] ?? 'Thank you for your business!'),
+        'show_store_name'    => $fieldEnabled('store_name'),
+        'show_store_address' => $fieldEnabled('store_address'),
+        'show_store_phone'   => $fieldEnabled('store_phone'),
+        'show_invoice_no'    => $fieldEnabled('invoice_no'),
+        'show_date'          => $fieldEnabled('date'),
+        'show_cashier'       => $fieldEnabled('cashier'),
+        'show_customer'      => $fieldEnabled('customer'),
+        'show_subtotal'      => $fieldEnabled('subtotal'),
+        'show_discount'      => $fieldEnabled('discount'),
+        'show_tax'           => $fieldEnabled('tax'),
+        'show_total'         => $fieldEnabled('total'),
+        'show_footer'        => $fieldEnabled('footer'),
+    ];
+    $footerText = $settings['footer_text'];
+
+    // Barcode of the invoice number, so the printed receipt can be re-scanned
+    // (e.g. to pull it back up for a return) instead of typed in by hand.
+    // vendor/autoload.php must come first: Picqer's barcode class is
+    // Composer-autoloaded, and Barcode.php's class_exists() check would
+    // silently fail (and skip the barcode) without it.
+    require_once __DIR__ . '/../vendor/autoload.php';
+    require_once __DIR__ . '/Barcode.php';
+    $invoiceBarcode = generateBarcodeImage($sale['invoice_no']);
+
     // Load template
     ob_start();
     require __DIR__ . '/../views/receipt_template.php';
     $html = ob_get_clean();
     
-    require_once __DIR__ . '/../vendor/autoload.php';
     $mpdf = new \Mpdf\Mpdf([
         'mode'          => 'utf-8',
         'format'        => [80, 150], // thermal receipt size
