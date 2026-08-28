@@ -579,17 +579,24 @@ function getSettings($keys = null) {
 
 function updateSetting($key, $value) {
     $db = Database::getInstance()->getConnection();
-    $stmt = $db->prepare("UPDATE settings SET value = ? WHERE `key` = ?");
-    return $stmt->execute([$value, $key]);
+    // INSERT ... ON DUPLICATE KEY UPDATE instead of UPDATE-only: a plain
+    // UPDATE silently does nothing (0 rows affected, but execute() still
+    // returns true — no error) whenever `key` doesn't already exist as a
+    // row. That's exactly why new settings (printer_method, sumatra_path,
+    // etc.) looked like they saved but never actually persisted.
+    $stmt = $db->prepare("INSERT INTO settings (`key`, value) VALUES (?, ?)
+                           ON DUPLICATE KEY UPDATE value = VALUES(value)");
+    return $stmt->execute([$key, $value]);
 }
 
 function updateSettings($data) {
     $db = Database::getInstance()->getConnection();
     $db->beginTransaction();
     try {
+        $stmt = $db->prepare("INSERT INTO settings (`key`, value) VALUES (?, ?)
+                               ON DUPLICATE KEY UPDATE value = VALUES(value)");
         foreach ($data as $key => $value) {
-            $stmt = $db->prepare("UPDATE settings SET value = ? WHERE `key` = ?");
-            $stmt->execute([$value, $key]);
+            $stmt->execute([$key, $value]);
         }
         $db->commit();
         return true;
