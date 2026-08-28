@@ -1326,6 +1326,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             $printers = getInstalledPrinters();
             $response = ['success' => true, 'data' => $printers];
             break;
+
+        case 'test_print':
+            requirePermission('manage_settings');
+            $testPdf = generateTestReceiptPDF();
+            if (!$testPdf['success']) {
+                $response = ['success' => false, 'message' => $testPdf['message']];
+                break;
+            }
+            $result = attemptBridgePrint($testPdf['file']);
+            $response = ['success' => true, 'printed' => $result['printed'], 'message' => $result['message']];
+            break;
         
         case 'get_cash_report':
             requirePermission('view_reports');

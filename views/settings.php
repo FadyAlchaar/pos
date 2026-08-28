@@ -165,6 +165,15 @@ $canManage = hasPermission('manage_settings');
                         <small class="text-muted"><?= __('bridge_path_description') ?></small>
                     </div>
 
+                    <!-- ===== TEST PRINT ===== -->
+                    <div class="form-group mt-3">
+                        <button type="button" class="btn btn-outline" id="testPrintBtn" onclick="testPrint()">
+                            <i class="fas fa-print"></i> <?= __('test_print') ?>
+                        </button>
+                        <small class="text-muted d-block mt-1"><?= __('test_print_description') ?></small>
+                        <div id="testPrintResult" class="mt-2" style="display:none;"></div>
+                    </div>
+
                     <!-- ===== AUTO-PRINT TOGGLE ===== -->
                     <div class="form-group mt-3">
                         <label><i class="fas fa-toggle-on"></i> <?= __('auto_print_after_sale') ?></label>
@@ -288,6 +297,60 @@ function togglePrinterFields() {
     document.getElementById('sumatraPathGroup').style.display = method === 'pdf' ? 'block' : 'none';
     document.getElementById('bridgePathGroup').style.display = method === 'windows' ? 'block' : 'none';
     document.getElementById('networkPrinterGroup').style.display = method === 'network' ? 'block' : 'none';
+}
+
+// ============================================
+// TEST PRINT
+// Saves the printer form first (so the test always reflects exactly what's
+// on screen, not whatever was last saved), then runs the same print
+// pipeline a real sale would use, against a small standalone test PDF.
+// ============================================
+function testPrint() {
+    const btn = document.getElementById('testPrintBtn');
+    const resultBox = document.getElementById('testPrintResult');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <?= __('saving') ?>...';
+    resultBox.style.display = 'none';
+
+    const printerForm = document.getElementById('printerSettingsForm');
+    const formData = new FormData(printerForm);
+
+    fetch('?ajax=1&action=update_settings', { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(() => {
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <?= __('test_printing') ?>...';
+            return fetch('?ajax=1&action=test_print', {
+                method: 'POST',
+                headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                body: new URLSearchParams({ csrf_token: '<?= generateCSRFToken() ?>' })
+            });
+        })
+        .then(res => res.json())
+        .then(data => {
+            resultBox.style.display = 'block';
+            if (!data.success) {
+                resultBox.innerHTML = `<div class="alert alert-danger">❌ ${escapeHtmlSettings(data.message || 'Test print failed.')}</div>`;
+            } else if (data.printed === true) {
+                resultBox.innerHTML = `<div class="alert alert-success">✅ <?= __('test_print_success') ?></div>`;
+            } else {
+                resultBox.innerHTML = `<div class="alert alert-danger">❌ ${escapeHtmlSettings(data.message || 'Unknown error.')}</div>`;
+            }
+        })
+        .catch(err => {
+            resultBox.style.display = 'block';
+            resultBox.innerHTML = `<div class="alert alert-danger">❌ ${escapeHtmlSettings(err.message)}</div>`;
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-print"></i> <?= __('test_print') ?>';
+        });
+}
+
+function escapeHtmlSettings(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // ============================================
