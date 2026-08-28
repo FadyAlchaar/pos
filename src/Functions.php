@@ -804,13 +804,20 @@ function printViaSumatraPdf($pdfFilePath, $sumatraPath, $printerName) {
         return ['success' => false, 'message' => "Receipt PDF not found at: $pdfFilePath"];
     }
 
-    // -print-settings "noscale" keeps the PDF's own physical page size
-    // (our receipt PDFs are already generated at 80mm width to match the
-    // printer roll) instead of Sumatra auto-fitting/shrinking it to
-    // whatever default paper size Windows reports for the printer.
+    // -print-settings "shrink": matches SumatraPDF's own default interactive
+    // print behavior (fit/reposition content to the real printable area).
+    // Originally this used "noscale" on the assumption that since our PDF
+    // is already sized to 80mm, no fitting should be needed — but noscale
+    // places content at its raw coordinates with no positioning logic, so
+    // any mismatch between the PDF's origin and the printer's actual
+    // printable-area origin (e.g. a hardware margin) shows up as a shift
+    // that no paper-size preset can fix, since paper size was never the
+    // variable. "shrink" only scales down if content is larger than the
+    // printable area (harmless here) and — critically — positions it
+    // correctly within it, which is what manual printing was doing anyway.
     $cmd = escapeshellarg($sumatraPath)
         . ' -print-to ' . escapeshellarg($printerName)
-        . ' -print-settings ' . escapeshellarg('noscale')
+        . ' -print-settings ' . escapeshellarg('shrink')
         . ' -exit-on-print '
         . escapeshellarg($pdfFilePath);
 

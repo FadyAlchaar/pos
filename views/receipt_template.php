@@ -97,27 +97,24 @@ foreach (($sale['items'] ?? []) as $it) {
         table.items .num { text-align: <?= $isRtl ? 'left' : 'right' ?>; white-space: nowrap; }
         table.items .qty { text-align: center; }
         .item-name { font-weight: 600; }
-        .summary-line {
-            display: flex;
-            justify-content: space-between;
+        table.summary-line {
+            width: 100%;
             font-size: 0.85em;
             color: #444;
             margin: 4px 0;
         }
-        .totals { margin-top: 4px; font-size: 0.92em; }
-        .totals-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 2px 0;
-        }
-        .totals-row.discount { color: #a33; }
-        .totals-row.grand-total {
+        table.summary-line td { padding: 0; }
+        table.summary-line .right { text-align: <?= $isRtl ? 'left' : 'right' ?>; }
+        table.totals { width: 100%; margin-top: 4px; font-size: 0.92em; border-collapse: collapse; }
+        table.totals td { padding: 2px 0; }
+        table.totals .right { text-align: <?= $isRtl ? 'left' : 'right' ?>; }
+        table.totals .discount td { color: #a33; }
+        table.totals .grand-total td {
             font-size: 1.3em;
             font-weight: bold;
             border-top: 1.5px solid #000;
             border-bottom: 1.5px solid #000;
             padding: 6px 0;
-            margin-top: 6px;
         }
         .footer {
             text-align: center;
@@ -135,8 +132,8 @@ foreach (($sale['items'] ?? []) as $it) {
             margin-top: 10px;
         }
         .barcode-wrap img {
-            max-width: 90%;
-            height: 40px;
+            width: 60mm;
+            height: 12mm;
         }
         .barcode-wrap .barcode-text {
             font-size: 0.75em;
@@ -213,27 +210,29 @@ foreach (($sale['items'] ?? []) as $it) {
         </tbody>
     </table>
 
-    <div class="summary-line">
-        <span><?= $itemCount ?> <?= __('item') ?><?= $itemCount === 1 ? '' : 's' ?></span>
-        <span><?= $totalQty ?> <?= __('qty') ?></span>
-    </div>
+    <table class="summary-line">
+        <tr>
+            <td><?= $itemCount ?> <?= __('item') ?><?= $itemCount === 1 ? '' : 's' ?></td>
+            <td class="right"><?= $totalQty ?> <?= __('qty') ?></td>
+        </tr>
+    </table>
 
     <div class="dashed"></div>
 
-    <div class="totals">
+    <table class="totals">
         <?php if ($settings['show_subtotal']): ?>
-        <div class="totals-row"><span><?= __('subtotal') ?></span><span><?= $currency . ' ' . number_format($sale['subtotal'], 2) ?></span></div>
+        <tr><td><?= __('subtotal') ?></td><td class="right"><?= $currency . ' ' . number_format($sale['subtotal'], 2) ?></td></tr>
         <?php endif; ?>
         <?php if ($settings['show_discount'] && $sale['discount'] > 0): ?>
-        <div class="totals-row discount"><span><?= __('discount') ?></span><span>-<?= $currency . ' ' . number_format($sale['discount'], 2) ?></span></div>
+        <tr class="discount"><td><?= __('discount') ?></td><td class="right">-<?= $currency . ' ' . number_format($sale['discount'], 2) ?></td></tr>
         <?php endif; ?>
         <?php if ($settings['show_tax'] && $sale['tax'] > 0): ?>
-        <div class="totals-row"><span><?= __('tax') ?></span><span><?= $currency . ' ' . number_format($sale['tax'], 2) ?></span></div>
+        <tr><td><?= __('tax') ?></td><td class="right"><?= $currency . ' ' . number_format($sale['tax'], 2) ?></td></tr>
         <?php endif; ?>
         <?php if ($settings['show_total']): ?>
-        <div class="totals-row grand-total"><span><?= __('total') ?></span><span><?= $currency . ' ' . number_format($sale['total'], 2) ?></span></div>
+        <tr class="grand-total"><td><?= __('total') ?></td><td class="right"><?= $currency . ' ' . number_format($sale['total'], 2) ?></td></tr>
         <?php endif; ?>
-    </div>
+    </table>
 
     <?php if ($invoiceBarcode): ?>
     <div class="barcode-wrap">
