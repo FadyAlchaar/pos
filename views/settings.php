@@ -106,23 +106,35 @@ $canManage = hasPermission('manage_settings');
                     <div class="form-group">
                         <label><i class="fas fa-cogs"></i> <?= __('printing_method') ?></label>
                         <select id="printer_method" name="printer_method" class="form-control" onchange="togglePrinterFields()">
-                            <option value="windows" <?= ($settings['printer_method'] ?? 'windows') === 'windows' ? 'selected' : '' ?>>
+                            <option value="pdf" <?= ($settings['printer_method'] ?? 'pdf') === 'pdf' ? 'selected' : '' ?>>
+                                <?= __('print_exact_pdf') ?>
+                            </option>
+                            <option value="windows" <?= ($settings['printer_method'] ?? 'pdf') === 'windows' ? 'selected' : '' ?>>
                                 <?= __('windows_drivers') ?>
                             </option>
-                            <option value="network" <?= ($settings['printer_method'] ?? 'windows') === 'network' ? 'selected' : '' ?>>
+                            <option value="network" <?= ($settings['printer_method'] ?? 'pdf') === 'network' ? 'selected' : '' ?>>
                                 <?= __('network_printer_direct') ?>
                             </option>
                         </select>
                         <small class="text-muted"><?= __('printer_method_description') ?></small>
                     </div>
 
-                    <!-- ===== WINDOWS PRINTER DROPDOWN ===== -->
+                    <!-- ===== WINDOWS PRINTER DROPDOWN (used by both "pdf" and "windows" methods) ===== -->
                     <div class="form-group" id="windowsPrinterGroup">
                         <label><i class="fas fa-print"></i> <?= __('windows_printer_name') ?></label>
                         <select id="printer_name" name="printer_name" class="form-control">
                             <option value=""><?= __('loading_printers') ?>...</option>
                         </select>
                         <small class="text-muted"><?= __('select_from_installed_printers') ?></small>
+                    </div>
+
+                    <!-- ===== SUMATRAPDF PATH (pdf method) ===== -->
+                    <div class="form-group" id="sumatraPathGroup" style="display:none;">
+                        <label><i class="fas fa-file-pdf"></i> <?= __('sumatra_path_label') ?></label>
+                        <input type="text" id="sumatra_path" name="sumatra_path" class="form-control"
+                            placeholder="C:\POS\SumatraPDF.exe"
+                            value="<?= htmlspecialchars($settings['sumatra_path'] ?? 'C:\\POS\\SumatraPDF.exe') ?>">
+                        <small class="text-muted"><?= __('sumatra_path_description') ?></small>
                     </div>
 
                     <!-- ===== NETWORK PRINTER SETTINGS ===== -->
@@ -144,8 +156,8 @@ $canManage = hasPermission('manage_settings');
                         <small class="text-muted"><?= __('network_printer_description') ?></small>
                     </div>
 
-                    <!-- ===== C# BRIDGE PATH ===== -->
-                    <div class="form-group">
+                    <!-- ===== C# BRIDGE PATH (windows method — plain-text fallback) ===== -->
+                    <div class="form-group" id="bridgePathGroup" style="display:none;">
                         <label><i class="fas fa-code"></i> <?= __('bridge_executable_path') ?></label>
                         <input type="text" id="printer_bridge_path" name="printer_bridge_path" class="form-control" 
                             placeholder="C:\POS\TextPrinter.exe" 
@@ -271,7 +283,10 @@ function escapeHtml(text) {
 // ============================================
 function togglePrinterFields() {
     const method = document.getElementById('printer_method').value;
-    document.getElementById('windowsPrinterGroup').style.display = method === 'windows' ? 'block' : 'none';
+    // The Windows printer name dropdown is used by both "pdf" and "windows" methods
+    document.getElementById('windowsPrinterGroup').style.display = (method === 'pdf' || method === 'windows') ? 'block' : 'none';
+    document.getElementById('sumatraPathGroup').style.display = method === 'pdf' ? 'block' : 'none';
+    document.getElementById('bridgePathGroup').style.display = method === 'windows' ? 'block' : 'none';
     document.getElementById('networkPrinterGroup').style.display = method === 'network' ? 'block' : 'none';
 }
 
