@@ -30,7 +30,7 @@ $canManage = hasPermission('manage_products');
 
         <!-- Table -->
         <div class="table-responsive">
-            <table class="table" id="productTable">
+            <table class="table sortable-table" id="productTable">
                 <thead>
                     <tr>
                         <th>#</th>
@@ -40,7 +40,7 @@ $canManage = hasPermission('manage_products');
                         <th><?= __('stock') ?></th>
                         <th><?= __('category') ?></th>
                         <th><?= __('status') ?></th>
-                        <th style="text-align: right;"><?= __('actions') ?></th>
+                        <th style="text-align: right;" data-no-sort><?= __('actions') ?></th>
                     </tr>
                 </thead>
                 <tbody id="productTableBody">

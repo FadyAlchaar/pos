@@ -20,7 +20,7 @@ $products = getAllProducts('', 100, 0);
         </div>
 
         <div class="table-responsive">
-            <table class="table" id="poTable">
+            <table class="table sortable-table" id="poTable">
                 <thead>
                     <tr>
                         <th><?= __('po_no') ?></th>
@@ -28,7 +28,7 @@ $products = getAllProducts('', 100, 0);
                         <th><?= __('total') ?></th>
                         <th><?= __('order_date') ?></th>
                         <th><?= __('status') ?></th>
-                        <th style="text-align: right;"><?= __('actions') ?></th>
+                        <th style="text-align: right;" data-no-sort><?= __('actions') ?></th>
                     </tr>
                 </thead>
                 <tbody id="poTableBody">

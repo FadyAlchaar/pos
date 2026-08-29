@@ -631,6 +631,89 @@
             }
         }
 
+        // ============================================
+        // SORTABLE TABLES
+        // Add class="sortable-table" to any <table> and its columns become
+        // click-to-sort automatically — no per-page JS needed. Add
+        // data-no-sort to a <th> to exclude one column (e.g. an Actions
+        // column with buttons). Works on both server-rendered tables and
+        // tables whose rows get replaced by an AJAX refresh, since sorting
+        // reads whatever is currently in the <tbody> at click time rather
+        // than caching data up front.
+        // ============================================
+        function initSortableTables() {
+            document.querySelectorAll('table.sortable-table').forEach(function(table) {
+                const headerRow = table.querySelector('thead tr');
+                if (!headerRow || headerRow.dataset.sortableBound === '1') return;
+                headerRow.dataset.sortableBound = '1';
+
+                Array.from(headerRow.children).forEach(function(th, colIndex) {
+                    if (th.hasAttribute('data-no-sort')) return;
+                    th.classList.add('sortable-col');
+                    th.style.cursor = 'pointer';
+                    th.style.userSelect = 'none';
+
+                    const indicator = document.createElement('span');
+                    indicator.className = 'sort-indicator';
+                    indicator.style.marginLeft = '4px';
+                    indicator.style.opacity = '0.4';
+                    indicator.textContent = '⇅';
+                    th.appendChild(indicator);
+
+                    th.addEventListener('click', function() {
+                        sortTableByColumn(table, headerRow, colIndex, indicator);
+                    });
+                });
+            });
+        }
+
+        function parseSortValue(text) {
+            text = (text || '').trim();
+            const numericCandidate = text.replace(/[^\d.\-]/g, '');
+            if (numericCandidate !== '' && /^-?\d+(\.\d+)?$/.test(numericCandidate)) {
+                return { type: 'number', value: parseFloat(numericCandidate) };
+            }
+            return { type: 'string', value: text.toLowerCase() };
+        }
+
+        function sortTableByColumn(table, headerRow, colIndex, indicator) {
+            const tbody = table.querySelector('tbody');
+            if (!tbody) return;
+            const rows = Array.from(tbody.querySelectorAll('tr'));
+            if (rows.length === 0) return;
+
+            // Toggle direction; reset every other column's indicator first.
+            const currentDir = indicator.dataset.dir === 'asc' ? 'asc' : null;
+            headerRow.querySelectorAll('.sort-indicator').forEach(function(ind) {
+                ind.textContent = '⇅';
+                ind.style.opacity = '0.4';
+                delete ind.dataset.dir;
+            });
+            const newDir = currentDir === 'asc' ? 'desc' : 'asc';
+            indicator.dataset.dir = newDir;
+            indicator.textContent = newDir === 'asc' ? '▲' : '▼';
+            indicator.style.opacity = '1';
+
+            rows.sort(function(rowA, rowB) {
+                const cellA = rowA.children[colIndex];
+                const cellB = rowB.children[colIndex];
+                const textA = cellA ? (cellA.dataset.sortValue ?? cellA.textContent) : '';
+                const textB = cellB ? (cellB.dataset.sortValue ?? cellB.textContent) : '';
+                const a = parseSortValue(textA);
+                const b = parseSortValue(textB);
+                let result = (a.type === 'number' && b.type === 'number')
+                    ? a.value - b.value
+                    : a.value.localeCompare(b.value);
+                return newDir === 'asc' ? result : -result;
+            });
+
+            rows.forEach(function(row) { tbody.appendChild(row); });
+        }
+
+        document.addEventListener('DOMContentLoaded', initSortableTables);
+        // Re-scan after any AJAX-driven table refresh across the app.
+        document.addEventListener('table-content-updated', initSortableTables);
+
         function switchDevice(deviceId) {
             if (!deviceId) return;
             fetch('?route=switch-device', {

@@ -75,7 +75,7 @@ $device = getCurrentDevice();
 
         <!-- Table -->
         <div class="table-responsive">
-            <table class="table" id="cashTable">
+            <table class="table sortable-table" id="cashTable">
                 <thead>
                     <tr>
                         <th><?= __('date') ?></th>

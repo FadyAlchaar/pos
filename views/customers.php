@@ -29,7 +29,7 @@ $canManage = hasPermission('manage_customers');
 
         <!-- Table -->
         <div class="table-responsive">
-            <table class="table" id="customerTable">
+            <table class="table sortable-table" id="customerTable">
                 <thead>
                     <tr>
                         <th>#</th>
@@ -38,7 +38,7 @@ $canManage = hasPermission('manage_customers');
                         <th><?= __('email') ?></th>
                         <th><?= __('address') ?></th>
                         <th><?= __('created_at') ?></th>
-                        <th style="text-align: right;"><?= __('actions') ?></th>
+                        <th style="text-align: right;" data-no-sort><?= __('actions') ?></th>
                     </tr>
                 </thead>
                 <tbody id="customerTableBody">

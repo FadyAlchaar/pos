@@ -91,7 +91,7 @@
                 </div>
                 <div class="card-body" style="max-height: 350px; overflow-y: auto;">
                     <div class="table-responsive">
-                        <table class="table">
+                        <table class="table sortable-table">
                             <thead>
                                 <tr>
                                     <th>#</th>
@@ -117,7 +117,7 @@
                 </div>
                 <div class="card-body" style="max-height: 350px; overflow-y: auto;">
                     <div class="table-responsive">
-                        <table class="table">
+                        <table class="table sortable-table">
                             <thead>
                                 <tr>
                                     <th>Product</th>

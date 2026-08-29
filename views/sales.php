@@ -28,7 +28,7 @@
 
         <!-- Table -->
         <div class="table-responsive">
-            <table class="table" id="salesTable">
+            <table class="table sortable-table" id="salesTable">
                 <thead>
                     <tr>
                         <th><?= __('invoice') ?></th>
@@ -36,7 +36,7 @@
                         <th><?= __('total') ?></th>
                         <th><?= __('payment_method') ?></th>
                         <th><?= __('date') ?></th>
-                        <th style="text-align: right;"><?= __('actions') ?></th>
+                        <th style="text-align: right;" data-no-sort><?= __('actions') ?></th>
                     </tr>
                 </thead>
                 <tbody id="salesTableBody">

@@ -81,7 +81,7 @@ $canView = hasPermission('view_expenses');
 
         <!-- Table -->
         <div class="table-responsive">
-            <table class="table" id="expenseTable">
+            <table class="table sortable-table" id="expenseTable">
                 <thead>
                     <tr>
                         <th><?= __('date') ?></th>
@@ -90,7 +90,7 @@ $canView = hasPermission('view_expenses');
                         <th><?= __('amount') ?></th>
                         <th><?= __('payment_method') ?></th>
                         <th><?= __('by') ?></th>
-                        <th style="text-align: right;"><?= __('actions') ?></th>
+                        <th style="text-align: right;" data-no-sort><?= __('actions') ?></th>
                     </tr>
                 </thead>
                 <tbody id="expenseTableBody">

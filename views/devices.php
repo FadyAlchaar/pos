@@ -29,7 +29,7 @@ $canManage = hasPermission('manage_devices');
 
         <!-- Table -->
         <div class="table-responsive">
-            <table class="table" id="deviceTable">
+            <table class="table sortable-table" id="deviceTable">
                 <thead>
                     <tr>
                         <th>#</th>
@@ -38,7 +38,7 @@ $canManage = hasPermission('manage_devices');
                         <th><?= __('status') ?></th>
                         <th><?= __('users_assigned') ?></th>
                         <th><?= __('created_at') ?></th>
-                        <th style="text-align: right;"><?= __('actions') ?></th>
+                        <th style="text-align: right;" data-no-sort><?= __('actions') ?></th>
                     </tr>
                 </thead>
                 <tbody id="deviceTableBody">

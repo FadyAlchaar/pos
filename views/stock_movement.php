@@ -302,7 +302,7 @@ $firstDay = date('Y-m-01');
 
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table" id="smTable">
+                <table class="table sortable-table" id="smTable">
                     <thead>
                         <tr>
                             <th><?= __('date') ?></th>

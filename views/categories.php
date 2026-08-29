@@ -29,7 +29,7 @@ $canManage = hasPermission('manage_categories');
 
         <!-- Table -->
         <div class="table-responsive">
-            <table class="table" id="categoryTable">
+            <table class="table sortable-table" id="categoryTable">
                 <thead>
                     <tr>
                         <th>#</th>
@@ -37,7 +37,7 @@ $canManage = hasPermission('manage_categories');
                         <th><?= __('slug') ?></th>
                         <th><?= __('products') ?></th>
                         <th><?= __('created_at') ?></th>
-                        <th style="text-align: right;"><?= __('actions') ?></th>
+                        <th style="text-align: right;" data-no-sort><?= __('actions') ?></th>
                     </tr>
                 </thead>
                 <tbody id="categoryTableBody">

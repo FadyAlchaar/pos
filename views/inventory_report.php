@@ -66,7 +66,7 @@
 
         <!-- Table -->
         <div class="table-responsive">
-            <table class="table" id="inventoryTable">
+            <table class="table sortable-table" id="inventoryTable">
                 <thead>
                     <tr>
                         <th>#</th>

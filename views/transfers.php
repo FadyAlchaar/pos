@@ -19,7 +19,7 @@ $devices = getDevices();
         </div>
 
         <div class="table-responsive">
-            <table class="table" id="transferTable">
+            <table class="table sortable-table" id="transferTable">
                 <thead>
                     <tr>
                         <th><?= __('transfer_no') ?></th>
@@ -28,7 +28,7 @@ $devices = getDevices();
                         <th><?= __('items') ?></th>
                         <th><?= __('date') ?></th>
                         <th><?= __('by') ?></th>
-                        <th style="text-align: right;"><?= __('actions') ?></th>
+                        <th style="text-align: right;" data-no-sort><?= __('actions') ?></th>
                     </tr>
                 </thead>
                 <tbody id="transferTableBody">
