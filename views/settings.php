@@ -106,26 +106,65 @@ $canManage = hasPermission('manage_settings');
                     <div class="form-group">
                         <label><i class="fas fa-cogs"></i> <?= __('printing_method') ?></label>
                         <select id="printer_method" name="printer_method" class="form-control" onchange="togglePrinterFields()">
-                            <option value="pdf" <?= ($settings['printer_method'] ?? 'pdf') === 'pdf' ? 'selected' : '' ?>>
+                            <option value="image" <?= ($settings['printer_method'] ?? 'image') === 'image' ? 'selected' : '' ?>>
+                                <?= __('print_exact_image') ?>
+                            </option>
+                            <option value="pdf" <?= ($settings['printer_method'] ?? 'image') === 'pdf' ? 'selected' : '' ?>>
                                 <?= __('print_exact_pdf') ?>
                             </option>
-                            <option value="windows" <?= ($settings['printer_method'] ?? 'pdf') === 'windows' ? 'selected' : '' ?>>
+                            <option value="windows" <?= ($settings['printer_method'] ?? 'image') === 'windows' ? 'selected' : '' ?>>
                                 <?= __('windows_drivers') ?>
                             </option>
-                            <option value="network" <?= ($settings['printer_method'] ?? 'pdf') === 'network' ? 'selected' : '' ?>>
+                            <option value="network" <?= ($settings['printer_method'] ?? 'image') === 'network' ? 'selected' : '' ?>>
                                 <?= __('network_printer_direct') ?>
                             </option>
                         </select>
                         <small class="text-muted"><?= __('printer_method_description') ?></small>
                     </div>
 
-                    <!-- ===== WINDOWS PRINTER DROPDOWN (used by both "pdf" and "windows" methods) ===== -->
+                    <!-- ===== WINDOWS PRINTER DROPDOWN (used by "image", "pdf", and "windows" methods) ===== -->
                     <div class="form-group" id="windowsPrinterGroup">
                         <label><i class="fas fa-print"></i> <?= __('windows_printer_name') ?></label>
                         <select id="printer_name" name="printer_name" class="form-control">
                             <option value=""><?= __('loading_printers') ?>...</option>
                         </select>
                         <small class="text-muted"><?= __('select_from_installed_printers') ?></small>
+                    </div>
+
+                    <!-- ===== BRIDGE EXECUTABLE PATH (image + windows methods — same TextPrinter.exe handles both) ===== -->
+                    <div class="form-group" id="bridgePathGroup" style="display:none;">
+                        <label><i class="fas fa-code"></i> <?= __('bridge_executable_path') ?></label>
+                        <input type="text" id="printer_bridge_path" name="printer_bridge_path" class="form-control" 
+                            placeholder="C:\POS\TextPrinter.exe" 
+                            value="<?= htmlspecialchars($settings['printer_bridge_path'] ?? 'C:\\POS\\TextPrinter.exe') ?>">
+                        <small class="text-muted"><?= __('bridge_path_description') ?></small>
+                    </div>
+
+                    <!-- ===== WKHTMLTOIMAGE PATH (image method) ===== -->
+                    <div class="form-group" id="wkhtmltoimagePathGroup" style="display:none;">
+                        <label><i class="fas fa-image"></i> <?= __('wkhtmltoimage_path_label') ?></label>
+                        <input type="text" id="wkhtmltoimage_path" name="wkhtmltoimage_path" class="form-control"
+                            placeholder="C:\POS\wkhtmltoimage.exe"
+                            value="<?= htmlspecialchars($settings['wkhtmltoimage_path'] ?? 'C:\\POS\\wkhtmltoimage.exe') ?>">
+                        <small class="text-muted"><?= __('wkhtmltoimage_path_description') ?></small>
+                    </div>
+
+                    <!-- ===== PAPER SIZE NAME (image method) ===== -->
+                    <div class="form-group" id="paperSizeNameGroup" style="display:none;">
+                        <label><i class="fas fa-ruler-combined"></i> <?= __('paper_size_name_label') ?></label>
+                        <input type="text" id="printer_paper_size_name" name="printer_paper_size_name" class="form-control"
+                            placeholder="80mm Receipt"
+                            value="<?= htmlspecialchars($settings['printer_paper_size_name'] ?? '') ?>">
+                        <small class="text-muted"><?= __('paper_size_name_description') ?></small>
+                    </div>
+
+                    <!-- ===== IMAGE WIDTH (image method) ===== -->
+                    <div class="form-group" id="imageWidthGroup" style="display:none;">
+                        <label><i class="fas fa-arrows-alt-h"></i> <?= __('receipt_image_width_label') ?></label>
+                        <input type="number" id="receipt_image_width_px" name="receipt_image_width_px" class="form-control"
+                            min="200" max="2000" step="10"
+                            value="<?= htmlspecialchars($settings['receipt_image_width_px'] ?? '640') ?>">
+                        <small class="text-muted"><?= __('receipt_image_width_description') ?></small>
                     </div>
 
                     <!-- ===== SUMATRAPDF PATH (pdf method) ===== -->
@@ -154,15 +193,6 @@ $canManage = hasPermission('manage_settings');
                             </div>
                         </div>
                         <small class="text-muted"><?= __('network_printer_description') ?></small>
-                    </div>
-
-                    <!-- ===== C# BRIDGE PATH (windows method — plain-text fallback) ===== -->
-                    <div class="form-group" id="bridgePathGroup" style="display:none;">
-                        <label><i class="fas fa-code"></i> <?= __('bridge_executable_path') ?></label>
-                        <input type="text" id="printer_bridge_path" name="printer_bridge_path" class="form-control" 
-                            placeholder="C:\POS\TextPrinter.exe" 
-                            value="<?= htmlspecialchars($settings['printer_bridge_path'] ?? 'C:\\POS\\TextPrinter.exe') ?>">
-                        <small class="text-muted"><?= __('bridge_path_description') ?></small>
                     </div>
 
                     <!-- ===== TEST PRINT ===== -->
@@ -292,10 +322,14 @@ function escapeHtml(text) {
 // ============================================
 function togglePrinterFields() {
     const method = document.getElementById('printer_method').value;
-    // The Windows printer name dropdown is used by both "pdf" and "windows" methods
-    document.getElementById('windowsPrinterGroup').style.display = (method === 'pdf' || method === 'windows') ? 'block' : 'none';
+    // The Windows printer name dropdown is used by "image", "pdf", and "windows" methods
+    document.getElementById('windowsPrinterGroup').style.display = (method === 'image' || method === 'pdf' || method === 'windows') ? 'block' : 'none';
+    // TextPrinter.exe (the bridge) is used by both "image" and "windows" methods
+    document.getElementById('bridgePathGroup').style.display = (method === 'image' || method === 'windows') ? 'block' : 'none';
+    document.getElementById('wkhtmltoimagePathGroup').style.display = method === 'image' ? 'block' : 'none';
+    document.getElementById('paperSizeNameGroup').style.display = method === 'image' ? 'block' : 'none';
+    document.getElementById('imageWidthGroup').style.display = method === 'image' ? 'block' : 'none';
     document.getElementById('sumatraPathGroup').style.display = method === 'pdf' ? 'block' : 'none';
-    document.getElementById('bridgePathGroup').style.display = method === 'windows' ? 'block' : 'none';
     document.getElementById('networkPrinterGroup').style.display = method === 'network' ? 'block' : 'none';
 }
 

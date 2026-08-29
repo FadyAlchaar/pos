@@ -706,6 +706,24 @@ function attemptBridgePrint($pdfFilePath, $saleId = null) {
     $printerMethod = $settings['printer_method'] ?? 'pdf';
     $printerName = trim($settings['printer_name'] ?? '');
 
+    if ($printerMethod === 'image') {
+        $bridgePath = trim($settings['printer_bridge_path'] ?? '');
+        if ($bridgePath === '') {
+            return ['printed' => false, 'message' => 'Bridge Executable Path is empty in Settings → Printer Configuration.'];
+        }
+        if ($printerName === '') {
+            return ['printed' => false, 'message' => 'No Windows Printer Name selected in Settings → Printer Configuration.'];
+        }
+        $imageResult = ($saleId !== null)
+            ? generateReceiptImage($saleId)
+            : generateTestReceiptImage();
+        if (!$imageResult['success']) {
+            return ['printed' => false, 'message' => $imageResult['message']];
+        }
+        $r = printViaTextPrinterBridge(null, $bridgePath, $printerName, $imageResult['file']);
+        return ['printed' => $r['success'], 'message' => $r['message']];
+    }
+
     if ($printerMethod === 'pdf') {
         $sumatraPath = trim($settings['sumatra_path'] ?? '');
         if ($sumatraPath === '') {
@@ -746,9 +764,33 @@ function attemptBridgePrint($pdfFilePath, $saleId = null) {
 // which uses GDI+/Graphics.DrawString through a real Windows printer driver
 // instead of raw ESC/POS text, which cannot shape Arabic correctly).
 // ============================================
-function printViaTextPrinterBridge($saleId, $bridgePath, $printerName) {
+function printViaTextPrinterBridge($saleId, $bridgePath, $printerName, $imagePath = null) {
     if (!file_exists($bridgePath)) {
         return ['success' => false, 'message' => "Bridge executable not found at: $bridgePath"];
+    }
+
+    // Image mode: an already-rendered receipt PNG was passed in (from
+    // generateReceiptImage()/generateTestReceiptImage()) — just hand its
+    // path straight to the bridge, which detects image files by extension
+    // and prints them via Graphics.DrawImage instead of drawing text.
+    if ($imagePath !== null) {
+        if (!file_exists($imagePath)) {
+            return ['success' => false, 'message' => "Receipt image not found at: $imagePath"];
+        }
+        $settings = getSettings();
+        $paperSizeName = trim($settings['printer_paper_size_name'] ?? '');
+
+        $cmd = escapeshellarg($bridgePath) . ' ' . escapeshellarg($printerName) . ' ' . escapeshellarg($imagePath);
+        if ($paperSizeName !== '') {
+            $cmd .= ' ' . escapeshellarg($paperSizeName);
+        }
+        exec($cmd . ' 2>&1', $outputLines, $exitCode);
+
+        if ($exitCode === 0) {
+            return ['success' => true, 'message' => 'Printed successfully.'];
+        }
+        $errorDetail = trim(implode("\n", $outputLines));
+        return ['success' => false, 'message' => $errorDetail !== '' ? $errorDetail : "Bridge exited with code $exitCode."];
     }
 
     $sale = getSaleById($saleId);
@@ -1964,12 +2006,13 @@ function generateTestReceiptPDF() {
     return ['success' => true, 'file' => $pdfFile];
 }
 
-function generateReceiptPDF($saleId, $method = 'normal') {
-    $sale = getSaleById($saleId);
-    if (!$sale) {
-        return ['success' => false, 'message' => 'Sale not found'];
-    }
-    
+// ============================================
+// Builds the rendered receipt HTML plus everything the caller needs to
+// turn it into either a PDF (mpdf) or an image (wkhtmltoimage). Shared by
+// generateReceiptPDF() and generateReceiptImage() so their settings/field
+// handling can't silently drift apart from each other over time.
+// ============================================
+function buildReceiptHtml($sale) {
     $storeSettings = getSettings();
     $storeName = $storeSettings['store_name'] ?? 'POS System';
     $storeAddress = $storeSettings['store_address'] ?? '';
@@ -2020,10 +2063,20 @@ function generateReceiptPDF($saleId, $method = 'normal') {
     require_once __DIR__ . '/Barcode.php';
     $invoiceBarcode = generateBarcodeImage($sale['invoice_no']);
 
-    // Load template
     ob_start();
     require __DIR__ . '/../views/receipt_template.php';
     $html = ob_get_clean();
+
+    return $html;
+}
+
+function generateReceiptPDF($saleId, $method = 'normal') {
+    $sale = getSaleById($saleId);
+    if (!$sale) {
+        return ['success' => false, 'message' => 'Sale not found'];
+    }
+
+    $html = buildReceiptHtml($sale);
     
     $mpdf = new \Mpdf\Mpdf([
         'mode'          => 'utf-8',
@@ -2064,6 +2117,110 @@ function generateReceiptPDF($saleId, $method = 'normal') {
     $mpdf->Output($pdfFile, \Mpdf\Output\Destination::FILE);
     
     return ['success' => true, 'file' => $pdfFile];
+}
+
+// ============================================
+// Renders the receipt straight to a PNG via wkhtmltoimage, instead of
+// going through a PDF. Used for the "Print Exact Image" method — printing
+// is then just Graphics.DrawImage() through the same PrintDocument
+// pipeline that's already proven to position correctly on the physical
+// printer, rather than depending on an external PDF-printing tool's
+// silent-CLI paper/DEVMODE handling (which is what caused the shifting
+// with SumatraPDF).
+// Rendered at ~203 DPI equivalent for an 80mm-wide receipt (640px), which
+// matches the native dot density of most 80mm thermal printers.
+// ============================================
+function generateReceiptImage($saleId, $widthPx = null) {
+    $sale = getSaleById($saleId);
+    if (!$sale) {
+        return ['success' => false, 'message' => 'Sale not found'];
+    }
+
+    if ($widthPx === null) {
+        $settings = getSettings();
+        $widthPx = (int)($settings['receipt_image_width_px'] ?? 640);
+        if ($widthPx <= 0) {
+            $widthPx = 640;
+        }
+    }
+
+    $html = buildReceiptHtml($sale);
+    return renderHtmlToImage($html, 'receipt_' . $saleId, $widthPx);
+}
+
+// ============================================
+// Shared HTML->PNG rendering via wkhtmltoimage. Used by both
+// generateReceiptImage() (real sales) and generateTestReceiptImage()
+// (Settings "Test Print" button).
+// ============================================
+function renderHtmlToImage($html, $filenamePrefix, $widthPx = 640) {
+    $settings = getSettings();
+    $wkPath = trim($settings['wkhtmltoimage_path'] ?? '');
+    if ($wkPath === '') {
+        return ['success' => false, 'message' => 'wkhtmltoimage Path is empty in Settings → Printer Configuration.'];
+    }
+    if (!file_exists($wkPath)) {
+        return ['success' => false, 'message' => "wkhtmltoimage not found at: $wkPath"];
+    }
+
+    $receiptDir = __DIR__ . '/../receipts';
+    if (!is_dir($receiptDir)) {
+        mkdir($receiptDir, 0777, true);
+    }
+
+    $htmlFile = $receiptDir . '/' . $filenamePrefix . '_' . uniqid() . '.html';
+    $pngFile = $receiptDir . '/' . $filenamePrefix . '_' . date('Ymd_His') . '.png';
+    file_put_contents($htmlFile, $html, LOCK_EX);
+
+    // --width sets the render viewport in pixels; height is left to
+    // auto-fit the content (no --height passed) since receipts vary in
+    // length. --quality 100 avoids JPEG-style artifacting on thin text.
+    $cmd = escapeshellarg($wkPath)
+        . ' --width ' . (int)$widthPx
+        . ' --quality 100'
+        . ' --disable-smart-width'
+        . ' ' . escapeshellarg($htmlFile)
+        . ' ' . escapeshellarg($pngFile);
+
+    exec($cmd . ' 2>&1', $outputLines, $exitCode);
+    @unlink($htmlFile);
+
+    if ($exitCode === 0 && file_exists($pngFile)) {
+        return ['success' => true, 'file' => $pngFile];
+    }
+
+    $errorDetail = trim(implode("\n", $outputLines));
+    return ['success' => false, 'message' => $errorDetail !== '' ? $errorDetail : "wkhtmltoimage exited with code $exitCode."];
+}
+
+// ============================================
+// Standalone test image — mirrors generateTestReceiptPDF() but renders
+// via wkhtmltoimage for the "Print Exact Image" method's Test Print.
+// ============================================
+function generateTestReceiptImage() {
+    $storeSettings = getSettings();
+    $storeName = $storeSettings['store_name'] ?? 'POS System';
+
+    $html = '<!DOCTYPE html><html dir="rtl"><head><meta charset="UTF-8"><style>
+        body { font-family: dejavusans, Arial, sans-serif; font-size: 22px; text-align: center; padding: 10px; margin: 0; }
+        .title { font-size: 1.4em; font-weight: bold; margin-bottom: 6px; }
+        .line { border-top: 2px dashed #333; margin: 12px 0; }
+        .ar { font-size: 1.1em; margin: 8px 0; }
+    </style></head><body>
+        <div class="title">' . htmlspecialchars($storeName) . '</div>
+        <div>TEST PRINT — ' . date('Y-m-d H:i:s') . '</div>
+        <div class="line"></div>
+        <div class="ar">اختبار الطباعة — تأكيد دعم اللغة العربية</div>
+        <div>1234567890 — abcXYZ</div>
+        <div class="line"></div>
+        <div>If this printed correctly, your printer setup is working.</div>
+    </body></html>';
+
+    $widthPx = (int)($storeSettings['receipt_image_width_px'] ?? 640);
+    if ($widthPx <= 0) {
+        $widthPx = 640;
+    }
+    return renderHtmlToImage($html, 'test_print_image', $widthPx);
 }
 
 function buildTextReceipt($sale) {
