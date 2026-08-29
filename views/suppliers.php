@@ -265,9 +265,6 @@ function deleteSupplier(id) {
     });
 }
 
-document.getElementById('supplierModal').addEventListener('click', function(e) {
-    if (e.target === this) closeSupplierModal();
-});
 <?php endif; ?>
 
 document.addEventListener('DOMContentLoaded', function() {

@@ -292,9 +292,6 @@ function deleteUser(id) {
     });
 }
 
-document.getElementById('userModal').addEventListener('click', function(e) {
-    if (e.target === this) closeUserModal();
-});
 <?php endif; ?>
 
 document.addEventListener('DOMContentLoaded', function() {

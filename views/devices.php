@@ -265,9 +265,6 @@ function deleteDevice(id) {
         .catch(() => alert('<?= __('Network error.') ?>'));
 }
 
-document.getElementById('deviceModal').addEventListener('click', function(e) {
-    if (e.target === this) closeDeviceModal();
-});
 <?php endif; ?>
 
 document.addEventListener('DOMContentLoaded', function() {

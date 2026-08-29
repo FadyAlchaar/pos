@@ -399,10 +399,6 @@ function deleteProduct(id) {
     });
 }
 
-// Close modal on outside click
-document.getElementById('productModal').addEventListener('click', function(e) {
-    if (e.target === this) closeProductModal();
-});
 <?php endif; ?>
 
 // ============================================

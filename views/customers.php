@@ -267,9 +267,6 @@ function deleteCustomer(id) {
     });
 }
 
-document.getElementById('customerModal').addEventListener('click', function(e) {
-    if (e.target === this) closeCustomerModal();
-});
 <?php endif; ?>
 
 document.addEventListener('DOMContentLoaded', function() {

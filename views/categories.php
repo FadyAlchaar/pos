@@ -243,10 +243,6 @@ function deleteCategory(id) {
     });
 }
 
-// Close modal on outside click
-document.getElementById('categoryModal').addEventListener('click', function(e) {
-    if (e.target === this) closeCategoryModal();
-});
 <?php endif; ?>
 
 // Load on page load

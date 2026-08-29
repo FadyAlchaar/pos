@@ -338,8 +338,4 @@ document.addEventListener('DOMContentLoaded', function() {
     loadSales();
 });
 
-// Close modal on outside click
-document.getElementById('invoiceModal').addEventListener('click', function(e) {
-    if (e.target === this) closeInvoiceModal();
-});
 </script>

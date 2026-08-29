@@ -161,6 +161,61 @@ function getProductById($id) {
     return $stmt->fetch();
 }
 
+// ============================================
+// Checks for an existing product with the same name or barcode within the
+// current device's own catalog (not across devices — a transferred item
+// legitimately gets a duplicate barcode on its destination device's row).
+// Returns a human-readable message naming the conflicting product, or
+// null if there's no conflict.
+// ============================================
+function checkDuplicateProduct($name, $barcode, $excludeId = null) {
+    $db = Database::getInstance()->getConnection();
+    $deviceId = getCurrentDeviceId();
+
+    // Name check — case-insensitive, ignores leading/trailing whitespace,
+    // since "Coca Cola" and "coca cola " are the same product to a cashier.
+    $sql = "SELECT id, name FROM products WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))";
+    $params = [$name];
+    if ($deviceId) {
+        $sql .= " AND device_id = ?";
+        $params[] = $deviceId;
+    }
+    if ($excludeId) {
+        $sql .= " AND id != ?";
+        $params[] = $excludeId;
+    }
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $nameMatch = $stmt->fetch();
+    if ($nameMatch) {
+        return "A product named \"{$nameMatch['name']}\" already exists (ID #{$nameMatch['id']}). Product names must be unique.";
+    }
+
+    // Barcode check — only when a barcode was actually provided, checked
+    // against all three barcode columns since any of them being reused
+    // would cause the same scan-ambiguity problem at checkout.
+    if (!empty(trim((string)$barcode))) {
+        $sql2 = "SELECT id, name FROM products WHERE (barcode = ? OR barcode2 = ? OR barcode3 = ?)";
+        $params2 = [$barcode, $barcode, $barcode];
+        if ($deviceId) {
+            $sql2 .= " AND device_id = ?";
+            $params2[] = $deviceId;
+        }
+        if ($excludeId) {
+            $sql2 .= " AND id != ?";
+            $params2[] = $excludeId;
+        }
+        $stmt2 = $db->prepare($sql2);
+        $stmt2->execute($params2);
+        $barcodeMatch = $stmt2->fetch();
+        if ($barcodeMatch) {
+            return "Barcode \"$barcode\" is already used by \"{$barcodeMatch['name']}\" (ID #{$barcodeMatch['id']}). Each barcode must be unique.";
+        }
+    }
+
+    return null;
+}
+
 function createProduct($data) {
     $db = Database::getInstance()->getConnection();
     $deviceId = getCurrentDeviceId();

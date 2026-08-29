@@ -770,15 +770,4 @@ function submitNewProduct(e) {
 document.addEventListener('DOMContentLoaded', function() {
     loadPurchaseOrders();
 });
-
-// Close modals on outside click
-document.getElementById('poModal').addEventListener('click', function(e) {
-    if (e.target === this) closePOModal();
-});
-document.getElementById('poViewModal').addEventListener('click', function(e) {
-    if (e.target === this) closePOViewModal();
-});
-document.getElementById('newProductModal').addEventListener('click', function(e) {
-    if (e.target === this) closeNewProductModal();
-});
 </script>

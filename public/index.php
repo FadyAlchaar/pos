@@ -68,8 +68,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             if (empty($data['name']) || $data['price'] <= 0) {
                 $response = ['success' => false, 'message' => 'Name and Price are required.'];
             } else {
-                $result = createProduct($data);
-                $response = ['success' => $result, 'message' => $result ? 'Product created successfully!' : 'Failed to create product.'];
+                $duplicateMessage = checkDuplicateProduct($data['name'], $data['barcode']);
+                if ($duplicateMessage !== null) {
+                    $response = ['success' => false, 'message' => $duplicateMessage];
+                } else {
+                    $result = createProduct($data);
+                    $response = ['success' => $result, 'message' => $result ? 'Product created successfully!' : 'Failed to create product.'];
+                }
             }
             break;
             
@@ -90,8 +95,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             if (empty($data['name']) || $data['price'] <= 0) {
                 $response = ['success' => false, 'message' => 'Name and Price are required.'];
             } else {
-                $result = updateProduct($id, $data);
-                $response = ['success' => $result, 'message' => $result ? 'Product updated successfully!' : 'Failed to update product.'];
+                $duplicateMessage = checkDuplicateProduct($data['name'], $data['barcode'], $id);
+                if ($duplicateMessage !== null) {
+                    $response = ['success' => false, 'message' => $duplicateMessage];
+                } else {
+                    $result = updateProduct($id, $data);
+                    $response = ['success' => $result, 'message' => $result ? 'Product updated successfully!' : 'Failed to update product.'];
+                }
             }
             break;
             

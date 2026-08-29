@@ -469,10 +469,6 @@ function deleteExpense(id) {
     });
 }
 
-// Close modal on outside click
-document.getElementById('expenseModal').addEventListener('click', function(e) {
-    if (e.target === this) closeExpenseModal();
-});
 <?php endif; ?>
 
 // ============================================
