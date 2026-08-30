@@ -216,10 +216,10 @@ function searchProducts(search) {
                 let html = '';
                 data.data.products.forEach(p => {
                     html += `
-                        <div class="search-item" onclick="addToCartFromSearch(${p.id}, '${escapeHtml(p.name)}', ${p.price}, ${p.stock})">
+                        <div class="search-item" onclick="addToCartFromSearch(${p.id}, '${escapeHtml(p.name)}', ${p.price}, ${p.stock}, '${escapeHtml(p.unit_name || '')}')">
                             <span class="item-name">${escapeHtml(p.name)}</span>
                             <span class="item-price">${formatPrice(p.price)}</span>
-                            <small class="text-muted">Stock: ${p.stock}</small>
+                            <small class="text-muted">Stock: ${p.stock}${p.unit_name ? ' ' + escapeHtml(p.unit_name) : ''}</small>
                         </div>
                     `;
                 });
@@ -236,8 +236,8 @@ function escapeHtml(text) {
     div.textContent = text;
     return div.innerHTML;
 }
-function addToCartFromSearch(id, name, price, stock) {
-    addToCart(id, name, price, stock);
+function addToCartFromSearch(id, name, price, stock, unitName) {
+    addToCart(id, name, price, stock, unitName);
     document.getElementById('quickSearch').value = '';
     document.getElementById('quickSearchResults').style.display = 'none';
 }
@@ -265,7 +265,7 @@ function processBarcode(barcode) {
         .then(data => {
             if (data.success) {
                 const p = data.data;
-                addToCart(p.id, p.name, p.price, p.stock);
+                addToCart(p.id, p.name, p.price, p.stock, p.unit_name);
                 if (navigator.vibrate) navigator.vibrate(50);
             } else {
                 alert('<?= __('product_not_found') ?>: ' + barcode);
@@ -318,7 +318,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // ADD TO CART
 // ============================================
-function addToCart(id, name, price, stock) {
+function addToCart(id, name, price, stock, unitName) {
     id = parseInt(id);
     price = parseFloat(price);
     stock = parseInt(stock);
@@ -338,7 +338,7 @@ function addToCart(id, name, price, stock) {
         }
         existing.qty++;
     } else {
-        cart.push({ id, name, price, qty: 1, max_stock: stock, discount: 0 });
+        cart.push({ id, name, price, qty: 1, max_stock: stock, discount: 0, unit_name: unitName || '' });
     }
     updateCartDisplay();
 }
@@ -389,7 +389,7 @@ function updateCartDisplay() {
                 <div class="cart-item-row">
                     <div class="cart-item-info">
                         <div class="cart-item-name">${item.name}</div>
-                        <div class="cart-item-price">${formatPrice(item.price)} x ${item.qty}</div>
+                        <div class="cart-item-price">${formatPrice(item.price)} x ${item.qty}${item.unit_name ? ' ' + escapeHtml(item.unit_name) : ''}</div>
                     </div>
                     <div class="cart-item-actions">
                         <button class="btn btn-sm btn-outline" onclick="changeQty(${index}, -1)">-</button>

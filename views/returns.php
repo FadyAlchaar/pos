@@ -136,7 +136,7 @@ function renderReturnForm(sale) {
         itemsHtml += `
             <div class="return-item" style="display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid #e9ecef;">
                 <input type="checkbox" class="return-item-checkbox" data-sale-item-id="${item.id}" data-product-id="${item.product_id}" data-price="${item.price}" data-max-qty="${maxQty}" onchange="toggleReturnItem(this)">
-                <span style="flex:1;"><strong>${item.product_name}</strong></span>
+                <span style="flex:1;"><strong>${item.product_name}</strong>${item.unit_name ? ' <small class="text-muted">(' + item.unit_name + ')</small>' : ''}</span>
                 <span><?= __('quantity') ?>: <input type="number" class="return-item-qty" value="${maxQty}" min="1" max="${maxQty}" style="width:60px;text-align:center;" disabled></span>
                 <span><?= __('price') ?>: ${formatPrice(parseFloat(item.price))}</span>
                 <span><?= __('Refund') ?>: ${formatPrice((item.price * maxQty))}</span>
@@ -250,13 +250,14 @@ function searchWalkinProducts(search) {
                 let html = `
                     <div class="table-responsive">
                         <table class="table table-sm">
-                            <thead><tr><th>Product</th><th><?= __('price') ?></th><th><?= __('stock') ?></th><th><?= __('quantity') ?></th><th><?= __('action') ?></th></tr></thead>
+                            <thead><tr><th>Product</th><th><?= __('unit') ?></th><th><?= __('price') ?></th><th><?= __('stock') ?></th><th><?= __('quantity') ?></th><th><?= __('action') ?></th></tr></thead>
                             <tbody>
                 `;
                 data.data.forEach(p => {
                     html += `
                         <tr>
                             <td>${escapeHtml(p.name)}</td>
+                            <td>${escapeHtml(p.unit_name || '-')}</td>
                             <td>${formatPrice(parseFloat(p.price))}</td>
                             <td>${p.stock}</td>
                             <td><input type="number" class="walkin-qty" data-id="${p.id}" value="1" min="1" max="${p.stock}" style="width:60px;"></td>
@@ -291,6 +292,7 @@ function addWalkinItem(productId) {
         walkinReturnItems.push({
             product_id: productId,
             product_name: product.name,
+            unit_name: product.unit_name || '',
             price: parseFloat(product.price),
             quantity: qty,
             refund_amount: parseFloat(product.price) * qty
@@ -313,7 +315,7 @@ function renderWalkinReturnForm() {
         totalRefund += item.refund_amount;
         itemsHtml += `
             <div class="return-item" style="display:flex;align-items:center;gap:10px;padding:10px;border-bottom:1px solid #e9ecef;">
-                <span style="flex:1;"><strong>${escapeHtml(item.product_name)}</strong></span>
+                <span style="flex:1;"><strong>${escapeHtml(item.product_name)}</strong>${item.unit_name ? ' <small class="text-muted">(' + escapeHtml(item.unit_name) + ')</small>' : ''}</span>
                 <span><?= __('quantity') ?>: ${item.quantity}</span>
                 <span><?= __('price') ?>: ${formatPrice(item.price)}</span>
                 <span><?= __('refund') ?>: ${formatPrice(item.refund_amount)}</span>

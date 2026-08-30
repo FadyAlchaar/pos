@@ -113,9 +113,8 @@ function getAllProducts($search = '', $limit = 50, $offset = 0) {
         $params = array_merge($params, [$searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm]);
     }
 
-    $sql = "SELECT p.*, c.name as category_name, u.name as unit_name FROM products p 
-            LEFT JOIN categories c ON p.category_id = c.id
-            LEFT JOIN units u ON p.unit_id = u.id";
+    $sql = "SELECT p.*, c.name as category_name FROM products p 
+            LEFT JOIN categories c ON p.category_id = c.id";
     if (!empty($conditions)) {
         $sql .= " WHERE " . implode(" AND ", $conditions);
     }
@@ -157,10 +156,7 @@ function getTotalProducts($search = '') {
 
 function getProductById($id) {
     $db = Database::getInstance()->getConnection();
-    $stmt = $db->prepare("SELECT p.*, c.name as category_name, u.name as unit_name FROM products p
-            LEFT JOIN categories c ON p.category_id = c.id
-            LEFT JOIN units u ON p.unit_id = u.id
-            WHERE p.id = ?");
+    $stmt = $db->prepare("SELECT * FROM products WHERE id = ?");
     $stmt->execute([$id]);
     return $stmt->fetch();
 }
@@ -224,11 +220,10 @@ function createProduct($data) {
     $db = Database::getInstance()->getConnection();
     $deviceId = getCurrentDeviceId();
     $categoryId = !empty($data['category_id']) ? $data['category_id'] : null;
-    $unitId = !empty($data['unit_id']) ? $data['unit_id'] : null;
     
     $stmt = $db->prepare("INSERT INTO products (
-        device_id, name, barcode, description, price, cost, stock, min_stock, category_id, unit_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+        device_id, name, barcode, description, price, cost, stock, min_stock, category_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
     return $stmt->execute([
         $deviceId,
         $data['name'],
@@ -238,20 +233,18 @@ function createProduct($data) {
         $data['cost'] ?? 0,
         $data['stock'] ?? 0,
         $data['min_stock'] ?? 5,
-        $categoryId,
-        $unitId
+        $categoryId
     ]);
 }
 
 function updateProduct($id, $data) {
     $db = Database::getInstance()->getConnection();
-    // Convert empty category_id/unit_id to NULL
+    // Convert empty category_id to NULL
     $categoryId = !empty($data['category_id']) ? $data['category_id'] : null;
-    $unitId = !empty($data['unit_id']) ? $data['unit_id'] : null;
     
     $stmt = $db->prepare("UPDATE products SET 
         name = ?, barcode = ?, description = ?, price = ?, cost = ?, 
-        stock = ?, min_stock = ?, category_id = ?, unit_id = ?, is_active = ? 
+        stock = ?, min_stock = ?, category_id = ?, is_active = ? 
         WHERE id = ?");
     return $stmt->execute([
         $data['name'],
@@ -261,8 +254,7 @@ function updateProduct($id, $data) {
         $data['cost'] ?? 0,
         $data['stock'] ?? 0,
         $data['min_stock'] ?? 5,
-        $categoryId,
-        $unitId,
+        $categoryId, // <-- FIXED: convert empty to NULL
         $data['is_active'] ?? 1,
         $id
     ]);
@@ -283,50 +275,6 @@ function updateStock($productId, $quantity) {
 // ============================================
 // CATEGORY FUNCTIONS
 // ============================================
-// ============================================
-// UNITS (of measure) — lookup table for products.unit_id
-// ============================================
-function getAllUnits() {
-    $db = Database::getInstance()->getConnection();
-    return $db->query("SELECT * FROM units ORDER BY name")->fetchAll();
-}
-
-function getUnitById($id) {
-    $db = Database::getInstance()->getConnection();
-    $stmt = $db->prepare("SELECT * FROM units WHERE id = ?");
-    $stmt->execute([$id]);
-    return $stmt->fetch();
-}
-
-function createUnit($name) {
-    $db = Database::getInstance()->getConnection();
-    $name = trim($name);
-    if ($name === '') {
-        return ['success' => false, 'message' => 'Unit name is required.'];
-    }
-    $stmt = $db->prepare("SELECT id FROM units WHERE LOWER(name) = LOWER(?)");
-    $stmt->execute([$name]);
-    if ($stmt->fetch()) {
-        return ['success' => false, 'message' => "Unit \"$name\" already exists."];
-    }
-    $stmt = $db->prepare("INSERT INTO units (name) VALUES (?)");
-    if ($stmt->execute([$name])) {
-        return ['success' => true, 'id' => $db->lastInsertId()];
-    }
-    return ['success' => false, 'message' => 'Failed to create unit.'];
-}
-
-function deleteUnit($id) {
-    $db = Database::getInstance()->getConnection();
-    $stmt = $db->prepare("SELECT COUNT(*) as count FROM products WHERE unit_id = ?");
-    $stmt->execute([$id]);
-    if ($stmt->fetch()['count'] > 0) {
-        return ['success' => false, 'message' => 'Cannot delete a unit that is still assigned to products.'];
-    }
-    $stmt = $db->prepare("DELETE FROM units WHERE id = ?");
-    return ['success' => $stmt->execute([$id])];
-}
-
 function getAllCategories($search = '') {
     $db = Database::getInstance()->getConnection();
     $params = [];
@@ -392,32 +340,7 @@ function deleteCategory($id) {
 function createSale($data) {
     $db = Database::getInstance()->getConnection();
     $db->beginTransaction();
-    
-    // ----- DEVICE ID FALLBACK -----
     $deviceId = getCurrentDeviceId();
-    if (!$deviceId) {
-        // 1. Try from the user's record
-        $user = getUserById($data['user_id']);
-        if ($user && !empty($user['device_id'])) {
-            $deviceId = $user['device_id'];
-            $_SESSION['device_id'] = $deviceId;
-        } else {
-            // 2. Try the first active device
-            $stmt = $db->query("SELECT id FROM devices WHERE is_active = 1 ORDER BY id LIMIT 1");
-            $default = $stmt->fetch();
-            if ($default) {
-                $deviceId = $default['id'];
-                $_SESSION['device_id'] = $deviceId;
-            } else {
-                // 3. Create a default device
-                $stmt = $db->prepare("INSERT INTO devices (device_name, device_code, is_active) VALUES (?, ?, 1)");
-                $stmt->execute(['Default Device', 'DEFAULT']);
-                $deviceId = $db->lastInsertId();
-                $_SESSION['device_id'] = $deviceId;
-            }
-        }
-    }
-    // ------------------------------
     
     try {
         $invoiceNo = 'INV-' . date('Ymd') . '-' . rand(1000, 9999);
@@ -427,7 +350,7 @@ function createSale($data) {
             subtotal, discount, tax, total, payment_method
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
         $stmt->execute([
-            $deviceId,  // <-- use the resolved device ID
+            $deviceId,
             $invoiceNo,
             $data['user_id'],
             $data['customer_id'] ?? null,
@@ -439,7 +362,6 @@ function createSale($data) {
             $data['total'],
             $data['payment_method'] ?? 'cash'
         ]);
-        // ... rest of the function remains the same
         
         $saleId = $db->lastInsertId();
         
@@ -518,9 +440,8 @@ function getSaleById($id) {
     $sale = $stmt->fetch();
     if ($sale) {
         $sale['customer_display_name'] = $sale['customer_name_from_db'] ?? $sale['customer_name'] ?? 'Walk-in';
-        $stmt = $db->prepare("SELECT si.*, p.name as product_name, un.name as unit_name FROM sale_items si 
+        $stmt = $db->prepare("SELECT si.*, p.name as product_name FROM sale_items si 
                               LEFT JOIN products p ON si.product_id = p.id 
-                              LEFT JOIN units un ON p.unit_id = un.id
                               WHERE si.sale_id = ?");
         $stmt->execute([$id]);
         $sale['items'] = $stmt->fetchAll();
@@ -1341,10 +1262,9 @@ function getReturnableSaleItems($saleId) {
 function searchProductsForReturn($search) {
     $db = Database::getInstance()->getConnection();
     $deviceId = getCurrentDeviceId();
-    $stmt = $db->prepare("SELECT p.id, p.name, p.barcode, p.price, p.stock, u.name as unit_name FROM products p
-                          LEFT JOIN units u ON p.unit_id = u.id
-                          WHERE (p.name LIKE ? OR p.barcode LIKE ? OR p.barcode2 LIKE ? OR p.barcode3 LIKE ? 
-                                 OR p.alameen_code LIKE ? OR p.coded_code LIKE ?) AND p.device_id = ? AND p.is_active = 1
+    $stmt = $db->prepare("SELECT id, name, barcode, price, stock FROM products 
+                          WHERE (name LIKE ? OR barcode LIKE ? OR barcode2 LIKE ? OR barcode3 LIKE ? 
+                                 OR alameen_code LIKE ? OR coded_code LIKE ?) AND device_id = ? AND is_active = 1
                           LIMIT 20");
     $searchTerm = "%$search%";
     $stmt->execute([$searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $searchTerm, $deviceId]);
@@ -1863,10 +1783,9 @@ function getPurchaseOrderById($id) {
     $stmt->execute([$id]);
     $po = $stmt->fetch();
     if ($po) {
-        $stmt = $db->prepare("SELECT poi.*, p.name as product_name, un.name as unit_name
+        $stmt = $db->prepare("SELECT poi.*, p.name as product_name 
                               FROM purchase_order_items poi
                               LEFT JOIN products p ON poi.product_id = p.id
-                              LEFT JOIN units un ON p.unit_id = un.id
                               WHERE poi.po_id = ?");
         $stmt->execute([$id]);
         $po['items'] = $stmt->fetchAll();

@@ -20,7 +20,7 @@ $products = getAllProducts('', 100, 0);
         </div>
 
         <div class="table-responsive">
-            <table class="table sortable-table" id="poTable">
+            <table class="table" id="poTable">
                 <thead>
                     <tr>
                         <th><?= __('po_no') ?></th>
@@ -28,7 +28,7 @@ $products = getAllProducts('', 100, 0);
                         <th><?= __('total') ?></th>
                         <th><?= __('order_date') ?></th>
                         <th><?= __('status') ?></th>
-                        <th style="text-align: right;" data-no-sort><?= __('actions') ?></th>
+                        <th style="text-align: right;"><?= __('actions') ?></th>
                     </tr>
                 </thead>
                 <tbody id="poTableBody">
@@ -95,6 +95,7 @@ $products = getAllProducts('', 100, 0);
                         </button>
                         <input type="number" class="form-control po-qty" placeholder="<?= __('quantity') ?>" style="width:100px;" min="1" value="1">
                         <input type="number" step="0.01" class="form-control po-price" placeholder="<?= __('unit_price') ?>" style="width:120px;" min="0" value="0.00">
+                        <span class="po-unit-label text-muted" style="min-width:44px;font-size:12px;"></span>
                         <button type="button" class="btn btn-sm btn-success" onclick="addPOProductRow()"><i class="fas fa-plus"></i></button>
                         <button type="button" class="btn btn-sm btn-danger" onclick="removePOProductRow(this)"><i class="fas fa-times"></i></button>
                     </div>
@@ -217,11 +218,11 @@ function searchPOPRODUCT(input) {
             if (data.success && data.data.length > 0) {
                 let html = '';
                 data.data.forEach(p => {
-                    html += `<div class="product-result-item" data-id="${p.id}" data-price="${p.price}" 
+                    html += `<div class="product-result-item" data-id="${p.id}" data-price="${p.price}" data-unit="${escapeHtml(p.unit_name || '')}"
                                    onclick="selectPOProduct(this)" 
                                    style="padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f0f0f0;">
                         <strong>${escapeHtml(p.name)}</strong> 
-                        <span class="text-muted">${p.barcode || ''}</span>
+                        <span class="text-muted">${p.barcode || ''}${p.unit_name ? ' • ' + escapeHtml(p.unit_name) : ''}</span>
                         <span style="float:right;">${formatPrice(p.price)}</span>
                     </div>`;
                 });
@@ -261,14 +262,17 @@ function selectPOProduct(element) {
     const hiddenId = container.querySelector('.po-product-id');
     const resultsDiv = container.querySelector('.po-product-results');
     const priceInput = container.querySelector('.po-price');
+    const unitLabel = container.querySelector('.po-unit-label');
     
     const id = element.dataset.id;
     const price = element.dataset.price;
+    const unit = element.dataset.unit || '';
     const name = element.innerText.trim();
     
     input.value = name;
     hiddenId.value = id;
     priceInput.value = price;
+    if (unitLabel) unitLabel.textContent = unit;
     resultsDiv.style.display = 'none';
 }
 
@@ -392,7 +396,7 @@ function renderPOView(order) {
         itemsHtml += `
             <tr>
                 <td>${escapeHtml(item.product_name)}</td>
-                <td>${item.quantity}</td>
+                <td>${item.quantity}${item.unit_name ? ' ' + escapeHtml(item.unit_name) : ''}</td>
                 <td>${formatPrice(item.unit_price)}</td>
                 <td>${formatPrice(item.total)}</td>
                 <td>${item.received_quantity || 0}</td>
@@ -556,6 +560,8 @@ function editPO(id) {
                     row.querySelector('.po-product-id').value = item.product_id;
                     row.querySelector('.po-qty').value = item.quantity;
                     row.querySelector('.po-price').value = parseFloat(item.unit_price || 0).toFixed(2);
+                    const unitLabel = row.querySelector('.po-unit-label');
+                    if (unitLabel) unitLabel.textContent = item.unit_name || '';
                     container.appendChild(row);
                 });
             } else {
@@ -587,6 +593,7 @@ function createPOProductRow() {
         </button>
         <input type="number" class="form-control po-qty" placeholder="<?= __('quantity') ?>" style="width:100px;" min="1" value="1">
         <input type="number" step="0.01" class="form-control po-price" placeholder="<?= __('unit_price') ?>" style="width:120px;" min="0" value="0.00">
+        <span class="po-unit-label text-muted" style="min-width:44px;font-size:12px;"></span>
         <button type="button" class="btn btn-sm btn-success" onclick="addPOProductRow()"><i class="fas fa-plus"></i></button>
         <button type="button" class="btn btn-sm btn-danger" onclick="removePOProductRow(this)"><i class="fas fa-times"></i></button>
     `;
@@ -618,6 +625,7 @@ function openPurchaseOrderModal() {
             </button>
             <input type="number" class="form-control po-qty" placeholder="<?= __('quantity') ?>" style="width:100px;" min="1" value="1">
             <input type="number" step="0.01" class="form-control po-price" placeholder="<?= __('unit_price') ?>" style="width:120px;" min="0" value="0.00">
+            <span class="po-unit-label text-muted" style="min-width:44px;font-size:12px;"></span>
             <button type="button" class="btn btn-sm btn-success" onclick="addPOProductRow()"><i class="fas fa-plus"></i></button>
             <button type="button" class="btn btn-sm btn-danger" onclick="removePOProductRow(this)"><i class="fas fa-times"></i></button>
         </div>

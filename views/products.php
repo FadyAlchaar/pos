@@ -30,7 +30,7 @@ $canManage = hasPermission('manage_products');
 
         <!-- Table -->
         <div class="table-responsive">
-            <table class="table sortable-table" id="productTable">
+            <table class="table" id="productTable">
                 <thead>
                     <tr>
                         <th>#</th>
@@ -40,7 +40,7 @@ $canManage = hasPermission('manage_products');
                         <th><?= __('stock') ?></th>
                         <th><?= __('category') ?></th>
                         <th><?= __('status') ?></th>
-                        <th style="text-align: right;" data-no-sort><?= __('actions') ?></th>
+                        <th style="text-align: right;"><?= __('actions') ?></th>
                     </tr>
                 </thead>
                 <tbody id="productTableBody">
@@ -110,6 +110,22 @@ $canManage = hasPermission('manage_products');
                                 <?php endforeach; ?>
                             </select>
                             <button type="button" class="btn btn-sm btn-outline" onclick="addCategoryOnTheFly()" title="<?= __('add_category') ?>">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-group">
+                        <label><i class="fas fa-balance-scale"></i> <?= __('unit') ?></label>
+                        <div class="d-flex gap-2">
+                            <select id="product_unit" name="unit_id" class="form-control" style="flex:1;">
+                                <option value=""><?= __('no_unit') ?></option>
+                                <?php foreach (getAllUnits() as $unit): ?>
+                                    <option value="<?= $unit['id'] ?>"><?= htmlspecialchars($unit['name']) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                            <button type="button" class="btn btn-sm btn-outline" onclick="addUnitOnTheFly()" title="<?= __('add_unit') ?>">
                                 <i class="fas fa-plus"></i>
                             </button>
                         </div>
@@ -340,6 +356,7 @@ function editProduct(id) {
                 document.getElementById('product_stock').value = p.stock;
                 document.getElementById('product_min_stock').value = p.min_stock;
                 document.getElementById('product_category').value = p.category_id || '';
+                document.getElementById('product_unit').value = p.unit_id || '';
                 document.getElementById('product_status').value = p.is_active;
                 document.getElementById('product_description').value = p.description || '';
                 formDirty = false;
@@ -470,6 +487,38 @@ function addCategoryOnTheFly() {
             select.appendChild(option);
             select.value = data.id;
             alert('<?= __('category_added') ?>');
+        } else {
+            alert('Error: ' + data.message);
+        }
+    })
+    .catch(() => alert('<?= __('Network error.') ?>'));
+}
+
+// ============================================
+// ADD UNIT ON THE FLY
+// ============================================
+function addUnitOnTheFly() {
+    const name = prompt('<?= __('Enter new unit name:') ?>');
+    if (!name || name.trim() === '') return;
+
+    const formData = new FormData();
+    formData.append('name', name.trim());
+    formData.append('csrf_token', '<?= generateCSRFToken() ?>');
+
+    fetch('?ajax=1&action=create_unit', {
+        method: 'POST',
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+        if (data.success) {
+            const select = document.getElementById('product_unit');
+            const option = document.createElement('option');
+            option.value = data.id;
+            option.textContent = data.name;
+            select.appendChild(option);
+            select.value = data.id;
+            alert('<?= __('unit_added') ?>');
         } else {
             alert('Error: ' + data.message);
         }

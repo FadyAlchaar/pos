@@ -64,6 +64,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 'stock' => $_POST['stock'] ?? 0,
                 'min_stock' => $_POST['min_stock'] ?? 5,
                 'category_id' => $_POST['category_id'] ?? null,
+                'unit_id' => $_POST['unit_id'] ?? null,
             ];
             if (empty($data['name']) || $data['price'] <= 0) {
                 $response = ['success' => false, 'message' => 'Name and Price are required.'];
@@ -90,6 +91,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
                 'stock' => $_POST['stock'] ?? 0,
                 'min_stock' => $_POST['min_stock'] ?? 5,
                 'category_id' => $_POST['category_id'] ?? null,
+                'unit_id' => $_POST['unit_id'] ?? null,
                 'is_active' => $_POST['is_active'] ?? 1,
             ];
             if (empty($data['name']) || $data['price'] <= 0) {
@@ -113,6 +115,28 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             break;
             
         // ---------- CATEGORIES ----------
+        case 'get_units':
+            requirePermission('view_products');
+            $units = getAllUnits();
+            $response = ['success' => true, 'data' => $units];
+            break;
+
+        case 'create_unit':
+            requirePermission('manage_products');
+            $name = $_POST['name'] ?? '';
+            $result = createUnit($name);
+            $response = $result['success']
+                ? ['success' => true, 'message' => 'Unit added!', 'id' => $result['id'], 'name' => trim($name)]
+                : ['success' => false, 'message' => $result['message']];
+            break;
+
+        case 'delete_unit':
+            requirePermission('manage_products');
+            $id = $_POST['id'] ?? 0;
+            $result = deleteUnit($id);
+            $response = $result;
+            break;
+
         case 'get_categories':
             requirePermission('view_categories');
             $search = $_GET['search'] ?? '';
@@ -439,16 +463,17 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             $db = Database::getInstance()->getConnection();
             
             // IMPORTANT: Wrap OR conditions in parentheses so AND is_active=1 applies to ALL
-            $stmt = $db->prepare("SELECT id, name, price, stock FROM products 
+            $stmt = $db->prepare("SELECT p.id, p.name, p.price, p.stock, u.name as unit_name FROM products p
+                                LEFT JOIN units u ON p.unit_id = u.id
                                 WHERE (
-                                    barcode = ? 
-                                    OR barcode2 = ? 
-                                    OR barcode3 = ? 
-                                    OR alameen_code = ? 
-                                    OR coded_code = ?
-                                    OR alameen_number = ?
+                                    p.barcode = ? 
+                                    OR p.barcode2 = ? 
+                                    OR p.barcode3 = ? 
+                                    OR p.alameen_code = ? 
+                                    OR p.coded_code = ?
+                                    OR p.alameen_number = ?
                                 )
-                                AND is_active = 1 
+                                AND p.is_active = 1 
                                 LIMIT 1");
             
             $stmt->execute([$barcode, $barcode, $barcode, $barcode, $barcode, $barcode]);
@@ -463,6 +488,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
 
         case 'print_receipt':
             requirePermission('view_sales');
+
+            // 🔥 DEBUG: log what PHP received
+            //error_log('print_receipt POST: ' . print_r($_POST, true));
+            //error_log('print_receipt RAW: ' . file_get_contents('php://input'));
+
             $id = $_POST['id'] ?? 0;
             $method = $_POST['method'] ?? 'normal';
             if ($id <= 0) {
@@ -1161,9 +1191,10 @@ if (isset($_GET['ajax']) && $_GET['ajax'] === '1') {
             }
             $db = Database::getInstance()->getConnection();
             $deviceId = getCurrentDeviceId();
-            $stmt = $db->prepare("SELECT id, name, barcode, price FROM products 
-                                WHERE (name LIKE ? OR barcode LIKE ? OR barcode2 LIKE ? OR barcode3 LIKE ?) 
-                                AND device_id = ? AND is_active = 1 LIMIT 20");
+            $stmt = $db->prepare("SELECT p.id, p.name, p.barcode, p.price, u.name as unit_name FROM products p
+                                LEFT JOIN units u ON p.unit_id = u.id
+                                WHERE (p.name LIKE ? OR p.barcode LIKE ? OR p.barcode2 LIKE ? OR p.barcode3 LIKE ?) 
+                                AND p.device_id = ? AND p.is_active = 1 LIMIT 20");
             $searchTerm = "%$search%";
             $stmt->execute([$searchTerm, $searchTerm, $searchTerm, $searchTerm, $deviceId]);
             $products = $stmt->fetchAll();
