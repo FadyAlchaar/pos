@@ -387,6 +387,85 @@ function deleteCategory($id) {
 }
 
 // ============================================
+// CASH LEDGER FUNCTIONS
+// ============================================
+
+/**
+ * Record a cash movement.
+ *
+ * direction:
+ *   in  = money enters cash
+ *   out = money leaves cash
+ */
+function recordCashTransaction(
+    $userId,
+    $deviceId,
+    $amount,
+    $direction,
+    $type,
+    $referenceType = null,
+    $referenceId = null,
+    $notes = null
+) {
+    $amount = (float)$amount;
+
+    if ($amount <= 0) {
+        throw new Exception('Cash transaction amount must be greater than zero.');
+    }
+
+    if (!in_array($direction, ['in', 'out'], true)) {
+        throw new Exception('Invalid cash transaction direction.');
+    }
+
+    $allowedTypes = [
+        'starting_cash',
+        'sale',
+        'purchase',
+        'sale_return',
+        'purchase_return',
+        'expense',
+        'deposit',
+        'withdrawal',
+        'adjustment'
+    ];
+
+    if (!in_array($type, $allowedTypes, true)) {
+        throw new Exception('Invalid cash transaction type.');
+    }
+
+    $db = Database::getInstance()->getConnection();
+
+    $stmt = $db->prepare("
+        INSERT INTO cash_transactions
+        (
+            user_id,
+            device_id,
+            amount,
+            direction,
+            type,
+            reference_type,
+            reference_id,
+            notes
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ");
+
+    $stmt->execute([
+        $userId,
+        $deviceId,
+        $amount,
+        $direction,
+        $type,
+        $referenceType,
+        $referenceId,
+        $notes
+    ]);
+
+    return (int)$db->lastInsertId();
+}
+
+
+// ============================================
 // SALE FUNCTIONS
 // ============================================
 function createSale($data) {
@@ -453,19 +532,23 @@ function createSale($data) {
         }
         
         // ==========================================
-        // 🔥 ADD CASH TRANSACTION (CASH IN)
+        // CASH TRANSACTION
+        // Only cash sales affect Cash in Hand.
         // ==========================================
-        $stmt = $db->prepare("INSERT INTO cash_transactions 
-            (user_id, device_id, amount, type, reference_id, notes) 
-            VALUES (?, ?, ?, 'sale', ?, ?)");
-        $stmt->execute([
-            $data['user_id'],
-            $deviceId,
-            $data['total'], // positive amount = cash IN
-            $saleId,
-            'Sale ' . $invoiceNo
-        ]);
-        // ==========================================
+        $paymentMethod = $data['payment_method'] ?? 'cash';
+
+        if ($paymentMethod === 'cash') {
+            recordCashTransaction(
+                $data['user_id'],
+                $deviceId,
+                $data['total'],
+                'in',
+                'sale',
+                'sale',
+                $saleId,
+                'Sale ' . $invoiceNo
+            );
+        }
         
         $db->commit();
         return ['success' => true, 'sale_id' => $saleId, 'invoice_no' => $invoiceNo];
@@ -1296,19 +1379,23 @@ function createReturn($data) {
         }
         
         // ==========================================
-        // 🔥 ADD CASH TRANSACTION (CASH OUT)
+        // CASH TRANSACTION
+        // Only cash refunds affect Cash in Hand.
         // ==========================================
-        $stmt = $db->prepare("INSERT INTO cash_transactions 
-            (user_id, device_id, amount, type, reference_id, notes) 
-            VALUES (?, ?, ?, 'return', ?, ?)");
-        $stmt->execute([
-            $user_id,
-            $deviceId,
-            -$totalRefund, // negative = cash OUT (money given back to customer)
-            $returnId,
-            'Return for ' . $returnNo
-        ]);
-        // ==========================================
+        $refundMethod = $data['refund_method'] ?? 'cash';
+
+        if ($refundMethod === 'cash') {
+            recordCashTransaction(
+                $user_id,
+                $deviceId,
+                $totalRefund,
+                'out',
+                'sale_return',
+                'return',
+                $returnId,
+                'Return ' . $returnNo
+            );
+        }
         
         // Update sale return status if linked
         if (isset($data['sale_id']) && $data['sale_id'] > 0) {
